@@ -47,7 +47,7 @@ struct HookInstaller {
         CodeBuddyHookSource()
     ]
 
-    /// Get bridge path - prefers the compiled Swift bridge, falls back to launcher script, then Python
+    /// Get bridge path for internal use (may contain spaces, not for hook commands)
     static func bridgePath() -> String {
         // Check for Swift bridge in app bundle (Contents/Helpers/)
         let helpersPath = Bundle.main.bundleURL
@@ -56,14 +56,7 @@ struct HookInstaller {
             return helpersPath
         }
 
-        // Check for installed bridge symlink
-        let installedBridge = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude-island/bin/claude-island-bridge").path
-        if FileManager.default.fileExists(atPath: installedBridge) {
-            return installedBridge
-        }
-
-        // Check for installed launcher script
+        // Check for installed launcher (no spaces, safe for shell)
         let launcherPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude-island/bin/claude-island-bridge-launcher.sh").path
         if FileManager.default.fileExists(atPath: launcherPath) {
@@ -72,6 +65,14 @@ struct HookInstaller {
 
         // Fall back to Python script
         return "\(detectPython()) ~/.claude/hooks/claude-island-state.py"
+    }
+
+    /// Get the hook command path — must be space-free for shell execution.
+    /// Always uses the launcher script at ~/.claude-island/bin/ which
+    /// internally discovers the app bundle path (even with spaces).
+    static func hookCommandPath() -> String {
+        // Use tilde form — no spaces, shell-safe, works across app relocations
+        return "~/.claude-island/bin/claude-island-bridge-launcher.sh"
     }
 
     /// Install the bridge launcher script to ~/.claude-island/bin/
@@ -90,6 +91,29 @@ struct HookInstaller {
                 ofItemAtPath: launcherDest.path
             )
         }
+
+        // Write current app bundle path to bridge cache so launcher can find it
+        // (critical for Xcode debug builds where app isn't in /Applications)
+        let cachePath = binDir.appendingPathComponent(".bridge-cache")
+        let appBundlePath = Bundle.main.bundleURL.path + "\n"
+        try? appBundlePath.write(to: cachePath, atomically: true, encoding: .utf8)
+
+        // Install statusline script
+        installStatusLineScript(to: binDir)
+    }
+
+    /// Install the statusline script to ~/.claude-island/bin/
+    private static func installStatusLineScript(to binDir: URL) {
+        let statuslineDest = binDir.appendingPathComponent("claude-island-statusline")
+
+        if let bundled = Bundle.main.url(forResource: "claude-island-statusline", withExtension: "sh") {
+            try? FileManager.default.removeItem(at: statuslineDest)
+            try? FileManager.default.copyItem(at: bundled, to: statuslineDest)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: statuslineDest.path
+            )
+        }
     }
 
     // MARK: - Public API
@@ -97,9 +121,14 @@ struct HookInstaller {
     /// Install ONLY user-enabled integrations. Called after user completes hook setup.
     static func installEnabledOnly() {
         installLauncher()
-        let bridge = bridgePath()
+        let bridge = hookCommandPath()
         for source in allSources {
             if AppSettings.isHookEnabled(for: source.sourceType) {
+                // Auto-upgrade hooks if version mismatch
+                if let claudeSource = source as? ClaudeHookSource, claudeSource.needsUpgrade() {
+                    try? claudeSource.uninstall()
+                    Task { await DiagnosticLogger.shared.log("Upgrading hook for \(source.displayName) to v\(ClaudeHookSource.hookVersion)", category: .hook) }
+                }
                 try? source.install(bridgePath: bridge)
                 Task { await DiagnosticLogger.shared.log("Installed hook for \(source.displayName)", category: .hook) }
             }
@@ -129,7 +158,8 @@ struct HookInstaller {
 
     /// Install a specific source (user-initiated)
     static func installSource(_ source: SessionSource) {
-        let bridge = bridgePath()
+        installLauncher()
+        let bridge = hookCommandPath()
         guard let hookSource = allSources.first(where: { $0.sourceType == source }) else { return }
         try? hookSource.install(bridgePath: bridge)
         AppSettings.setHookEnabled(true, for: source)
@@ -245,27 +275,27 @@ struct HookInstaller {
     // MARK: - Helpers
 
     static func detectPython() -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = ["python3"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        // Prefer system Python to avoid broken third-party Python installations
+        if FileManager.default.isExecutableFile(atPath: "/usr/bin/python3") {
+            return "/usr/bin/python3"
+        }
 
-        do {
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus == 0 {
-                return "python3"
+        // Try common Homebrew paths
+        for path in ["/opt/homebrew/bin/python3", "/usr/local/bin/python3"] {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
             }
-        } catch {}
+        }
 
-        return "python"
+        return "python3"
     }
 }
 
 // MARK: - Claude Hook Source
 
 struct ClaudeHookSource: HookSource {
+    static let hookVersion = 2
+
     var sourceType: SessionSource { .claude }
     var displayName: String { "Claude Code" }
 
@@ -374,6 +404,16 @@ struct ClaudeHookSource: HookSource {
         return false
     }
 
+    /// Check if the installed hook version matches current version
+    func needsUpgrade() -> Bool {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        let installedVersion = json["_claude_island_hook_version"] as? Int ?? 0
+        return isInstalled() && installedVersion < Self.hookVersion
+    }
+
     private func updateClaudeSettings(at settingsURL: URL) {
         var json: [String: Any] = [:]
         if let data = try? Data(contentsOf: settingsURL),
@@ -381,8 +421,8 @@ struct ClaudeHookSource: HookSource {
             json = existing
         }
 
-        let python = HookInstaller.detectPython()
-        let command = "\(python) ~/.claude/hooks/claude-island-state.py"
+        // Use shell-safe launcher path (no spaces) — it discovers the app bundle internally
+        let command = HookInstaller.hookCommandPath() + " --source claude"
         let hookEntry: [[String: Any]] = [["type": "command", "command": command]]
         let hookEntryWithTimeout: [[String: Any]] = [["type": "command", "command": command, "timeout": 86400]]
         let withMatcher: [[String: Any]] = [["matcher": "*", "hooks": hookEntry]]
@@ -410,7 +450,8 @@ struct ClaudeHookSource: HookSource {
 
         for (event, config) in hookEvents {
             if var existingEvent = hooks[event] as? [[String: Any]] {
-                let hasOurHook = existingEvent.contains { entry in
+                // Remove ALL old claude-island entries (stale paths, python, etc.)
+                existingEvent.removeAll { entry in
                     if let entryHooks = entry["hooks"] as? [[String: Any]] {
                         return entryHooks.contains { h in
                             let cmd = h["command"] as? String ?? ""
@@ -419,16 +460,24 @@ struct ClaudeHookSource: HookSource {
                     }
                     return false
                 }
-                if !hasOurHook {
-                    existingEvent.append(contentsOf: config)
-                    hooks[event] = existingEvent
-                }
+                // Add the current correct hook entry
+                existingEvent.append(contentsOf: config)
+                hooks[event] = existingEvent
             } else {
                 hooks[event] = config
             }
         }
 
         json["hooks"] = hooks
+        json["_claude_island_hook_version"] = Self.hookVersion
+
+        // Write statusLine config if not already set by user
+        if json["statusLine"] == nil {
+            json["statusLine"] = [
+                "command": "~/.claude-island/bin/claude-island-statusline",
+                "type": "command"
+            ] as [String: Any]
+        }
 
         if let data = try? JSONSerialization.data(
             withJSONObject: json,

@@ -8,9 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		FD0F42E72EE7ABA400980302 /* Mixpanel in Frameworks */ = {isa = PBXBuildFile; productRef = FD0F42E62EE7ABA400980302 /* Mixpanel */; };
-		FDB01A0C2EF0000009800001 /* claude-island-bridge in Copy Helpers */ = {isa = PBXBuildFile; fileRef = FDB01A012EF0000009800001 /* claude-island-bridge */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		FDA49F7D2EE11E3C00F9612E /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = FD33FD722EDF32D7002A6548 /* Markdown */; };
 		FDA49F7E2EE11E3C00F9612E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = FDA49F7F2EE11E3C00F9612E /* Sparkle */; };
+		FDB01A0C2EF0000009800001 /* claude-island-bridge in Copy Helpers */ = {isa = PBXBuildFile; fileRef = FDB01A012EF0000009800001 /* claude-island-bridge */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
