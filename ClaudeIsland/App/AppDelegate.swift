@@ -3,6 +3,7 @@ import IOKit
 import Mixpanel
 import Sparkle
 import SwiftUI
+import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowManager: WindowManager?
@@ -66,6 +67,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         Mixpanel.mainInstance().track(event: "App Launched")
         Mixpanel.mainInstance().flush()
+
+        // Request notification authorization
+        NotificationManager.shared.requestAuthorization()
 
         // Only install hooks that user has explicitly enabled
         if AppSettings.hookSetupCompleted {

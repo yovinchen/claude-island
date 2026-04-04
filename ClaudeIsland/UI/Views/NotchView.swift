@@ -518,6 +518,16 @@ struct NotchView: View {
                        shouldSurfaceAttention {
                         NSSound(named: soundName)?.play()
                     }
+
+                    // Send macOS system notification for task completion
+                    if shouldSurfaceAttention {
+                        for session in newlyWaitingSessions {
+                            NotificationManager.shared.sendTaskCompleteNotification(
+                                sessionId: session.sessionId,
+                                projectName: session.projectName
+                            )
+                        }
+                    }
                 }
             }
 

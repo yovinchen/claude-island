@@ -28,6 +28,7 @@ struct HookEvent: Decodable, Sendable {
     let notificationType: String?
     let message: String?
     let rateLimits: [String: AnyCodable]?
+    let env: [String: String]?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -41,6 +42,7 @@ struct HookEvent: Decodable, Sendable {
         case notificationType = "notification_type"
         case message
         case rateLimits = "rate_limits"
+        case env = "_env"
     }
 
     init(from decoder: Decoder) throws {
@@ -66,10 +68,11 @@ struct HookEvent: Decodable, Sendable {
         notificationType = try container.decodeIfPresent(String.self, forKey: .notificationType)
         message = try container.decodeIfPresent(String.self, forKey: .message)
         rateLimits = try container.decodeIfPresent([String: AnyCodable].self, forKey: .rateLimits)
+        env = try container.decodeIfPresent([String: String].self, forKey: .env)
     }
 
     /// Create a copy with updated toolUseId
-    init(sessionId: String, source: SessionSource, cwd: String, event: String, status: String, pid: Int?, tty: String?, approvalChannel: ApprovalChannel, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?, rateLimits: [String: AnyCodable]? = nil) {
+    init(sessionId: String, source: SessionSource, cwd: String, event: String, status: String, pid: Int?, tty: String?, approvalChannel: ApprovalChannel, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?, rateLimits: [String: AnyCodable]? = nil, env: [String: String]? = nil) {
         self.sessionId = sessionId
         self.source = source
         self.cwd = cwd
@@ -84,6 +87,7 @@ struct HookEvent: Decodable, Sendable {
         self.notificationType = notificationType
         self.message = message
         self.rateLimits = rateLimits
+        self.env = env
     }
 
     var sessionPhase: SessionPhase {
@@ -497,7 +501,8 @@ class HookSocketServer {
                 toolUseId: toolUseId,  // Use resolved toolUseId
                 notificationType: event.notificationType,
                 message: event.message,
-                rateLimits: event.rateLimits
+                rateLimits: event.rateLimits,
+                env: event.env
             )
 
             let pending = PendingPermission(
@@ -512,6 +517,15 @@ class HookSocketServer {
             permissionsLock.unlock()
 
             eventHandler?(updatedEvent)
+
+            // Send macOS system notification for permission requests
+            Task { @MainActor in
+                NotificationManager.shared.sendPermissionNotification(
+                    sessionId: event.sessionId,
+                    toolName: event.tool ?? "Tool",
+                    projectName: event.cwd.components(separatedBy: "/").last
+                )
+            }
             return
         } else {
             close(clientSocket)

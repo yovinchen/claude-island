@@ -93,6 +93,7 @@ enum AppSettings {
         static let hookSetupCompleted = "hookSetupCompleted"
         static let autoRepairHooks = "autoRepairHooks"
         static let onboardingCompleted = "onboardingCompleted"
+        static let enableSystemNotifications = "enableSystemNotifications"
     }
 
     // MARK: - Notification Sound
@@ -250,6 +251,21 @@ enum AppSettings {
         }
         set {
             defaults.set(newValue, forKey: Keys.autoRepairHooks)
+        }
+    }
+
+    // MARK: - System Notifications
+
+    /// Whether to send macOS system notifications for permission requests and task completion
+    static var enableSystemNotifications: Bool {
+        get {
+            if defaults.object(forKey: Keys.enableSystemNotifications) == nil {
+                return true
+            }
+            return defaults.bool(forKey: Keys.enableSystemNotifications)
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.enableSystemNotifications)
         }
     }
 

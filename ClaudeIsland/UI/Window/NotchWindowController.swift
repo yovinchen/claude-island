@@ -92,6 +92,13 @@ class NotchWindowController: NSWindowController {
         }
     }
 
+    /// Open the notch panel, optionally focusing a specific session
+    func openNotchForSession(sessionId: String?) {
+        viewModel.notchOpen(reason: .notification, presentationMode: .manualOpen)
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }

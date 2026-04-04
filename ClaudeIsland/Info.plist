@@ -17,6 +17,10 @@
     <key>NSHumanReadableCopyright</key>
     <string>Copyright 2025. All rights reserved.</string>
 
+    <!-- Notification Usage Description -->
+    <key>NSUserNotificationsUsageDescription</key>
+    <string>Claude Island sends notifications when Claude needs permission approval or finishes a task.</string>
+
     <!-- Sparkle Update Configuration -->
     <key>SUFeedURL</key>
     <string>https://claudeisland.com/appcast.xml</string>
