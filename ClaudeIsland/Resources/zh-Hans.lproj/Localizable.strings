@@ -1,0 +1,60 @@
+/* NotchMenuView */
+"menu.back" = "返回";
+"menu.quit" = "退出";
+"menu.star_github" = "GitHub 点星";
+"menu.check_updates" = "检查更新";
+"menu.launch_at_login" = "登录时启动";
+"menu.hooks" = "Hooks";
+"menu.accessibility" = "辅助功能";
+"menu.accessibility.enable" = "启用";
+"menu.accessibility.on" = "已开启";
+
+/* Behavior Settings */
+"settings.auto_expand" = "任务完成自动展开";
+"settings.suppress_focused" = "聚焦时不展开";
+"settings.auto_hide_idle" = "空闲时自动隐藏";
+"settings.show_usage" = "显示使用量";
+"settings.global_shortcut" = "全局快捷键 (⌘⇧I)";
+
+/* Hook Status */
+"hooks.title" = "AI 工具 Hooks";
+"hooks.repair_all" = "全部修复";
+"hooks.status.active" = "已启用";
+"hooks.status.not_installed" = "未安装";
+"hooks.status.disabled" = "已禁用";
+
+/* Update */
+"update.checking" = "检查中...";
+"update.up_to_date" = "已是最新版";
+"update.download" = "下载更新";
+"update.downloading" = "下载中...";
+"update.extracting" = "解压中...";
+"update.install_relaunch" = "安装并重启";
+"update.installing" = "安装中...";
+"update.failed" = "更新失败";
+"update.retry" = "重试";
+
+/* Instances View */
+"instances.no_sessions" = "无活跃会话";
+"instances.waiting_input" = "等待输入";
+"instances.processing" = "处理中";
+"instances.approval_needed" = "需要审批";
+
+/* Chat View */
+"chat.send" = "发送";
+"chat.placeholder" = "输入消息...";
+
+/* Usage */
+"usage.context" = "上下文: %d%%";
+"usage.api" = "API 使用量: %d%%";
+
+/* Sound Packs */
+"sound.system" = "系统";
+"sound.zelda" = "塞尔达";
+"sound.starcraft" = "星际争霸";
+"sound.mario" = "马里奥";
+"sound.minimal" = "简约";
+
+/* General */
+"general.on" = "开";
+"general.off" = "关";

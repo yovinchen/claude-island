@@ -27,12 +27,14 @@ enum NotchContentType: Equatable {
     case instances
     case menu
     case chat(SessionState)
+    case hookSetup
 
     var id: String {
         switch self {
         case .instances: return "instances"
         case .menu: return "menu"
         case .chat(let session): return "chat-\(session.sessionId)"
+        case .hookSetup: return "hookSetup"
         }
     }
 }
@@ -72,15 +74,20 @@ class NotchViewModel: ObservableObject {
                 height: 580
             )
         case .menu:
-            // Compact size for settings menu
+            // Larger size for settings menu with hook status section
             return CGSize(
                 width: min(screenRect.width * 0.4, 480),
-                height: 420 + screenSelector.expandedPickerHeight + soundSelector.expandedPickerHeight
+                height: 580 + screenSelector.expandedPickerHeight + soundSelector.expandedPickerHeight
             )
         case .instances:
             return CGSize(
                 width: min(screenRect.width * 0.4, 480),
                 height: 320
+            )
+        case .hookSetup:
+            return CGSize(
+                width: min(screenRect.width * 0.4, 480),
+                height: 480
             )
         }
     }
@@ -301,12 +308,19 @@ class NotchViewModel: ObservableObject {
         contentType = .instances
     }
 
-    /// Perform boot animation: expand briefly then collapse
+    /// Perform boot animation: expand briefly then collapse.
+    /// On first run (hooks not set up), shows the hook setup view instead of collapsing.
     func performBootAnimation() {
         notchOpen(reason: .boot, presentationMode: .manualOpen)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self = self, self.openReason == .boot else { return }
-            self.notchClose()
+
+            if !AppSettings.hookSetupCompleted {
+                // First run: show hook setup
+                self.contentType = .hookSetup
+            } else {
+                self.notchClose()
+            }
         }
     }
 }

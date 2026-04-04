@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Combine
 import CoreGraphics
 import SwiftUI
 
@@ -219,6 +220,27 @@ struct NotchView: View {
         .onChange(of: sessionMonitor.instances) { _, instances in
             handleProcessingChange()
             handleWaitingForInputChange(instances)
+            // Record activity when any session changes
+            activityCoordinator.recordActivity()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleNotch)) { _ in
+            if viewModel.status == .opened {
+                viewModel.notchClose()
+            } else {
+                isVisible = true
+                viewModel.notchOpen(reason: .click, presentationMode: .manualOpen)
+            }
+        }
+        .onReceive(activityCoordinator.objectWillChange) {
+            // Check idle-hide when coordinator publishes changes (includes periodic idle checks)
+            if activityCoordinator.shouldHideForIdle(),
+               viewModel.status == .closed,
+               !isAnyProcessing,
+               !hasPendingPermission,
+               !hasWaitingForInput,
+               viewModel.hasPhysicalNotch {
+                isVisible = false
+            }
         }
     }
 
@@ -327,6 +349,9 @@ struct NotchView: View {
                     .padding(.leading, 8)
             }
 
+            // Usage data rings
+            UsageHeaderDisplay(usageManager: UsageDataManager.shared)
+
             Spacer()
 
             // Menu toggle
@@ -378,6 +403,12 @@ struct NotchView: View {
                     sessionMonitor: sessionMonitor,
                     viewModel: viewModel
                 )
+            case .hookSetup:
+                HookSetupView {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        viewModel.contentType = .instances
+                    }
+                }
             }
         }
         .frame(width: notchSize.width - 24) // Fixed width to prevent text reflow

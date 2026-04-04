@@ -1,0 +1,60 @@
+/* NotchMenuView */
+"menu.back" = "Back";
+"menu.quit" = "Quit";
+"menu.star_github" = "Star on GitHub";
+"menu.check_updates" = "Check for Updates";
+"menu.launch_at_login" = "Launch at Login";
+"menu.hooks" = "Hooks";
+"menu.accessibility" = "Accessibility";
+"menu.accessibility.enable" = "Enable";
+"menu.accessibility.on" = "On";
+
+/* Behavior Settings */
+"settings.auto_expand" = "Auto-expand on Task complete";
+"settings.suppress_focused" = "Suppress when focused";
+"settings.auto_hide_idle" = "Auto-hide when idle";
+"settings.show_usage" = "Show usage data";
+"settings.global_shortcut" = "Global shortcut (⌘⇧I)";
+
+/* Hook Status */
+"hooks.title" = "AI Tool Hooks";
+"hooks.repair_all" = "Repair All";
+"hooks.status.active" = "Active";
+"hooks.status.not_installed" = "Not Installed";
+"hooks.status.disabled" = "Disabled";
+
+/* Update */
+"update.checking" = "Checking...";
+"update.up_to_date" = "Up to date";
+"update.download" = "Download Update";
+"update.downloading" = "Downloading...";
+"update.extracting" = "Extracting...";
+"update.install_relaunch" = "Install & Relaunch";
+"update.installing" = "Installing...";
+"update.failed" = "Update failed";
+"update.retry" = "Retry";
+
+/* Instances View */
+"instances.no_sessions" = "No active sessions";
+"instances.waiting_input" = "Waiting for input";
+"instances.processing" = "Processing";
+"instances.approval_needed" = "Approval needed";
+
+/* Chat View */
+"chat.send" = "Send";
+"chat.placeholder" = "Type a message...";
+
+/* Usage */
+"usage.context" = "Context: %d%%";
+"usage.api" = "API Usage: %d%%";
+
+/* Sound Packs */
+"sound.system" = "System";
+"sound.zelda" = "Zelda";
+"sound.starcraft" = "StarCraft";
+"sound.mario" = "Mario";
+"sound.minimal" = "Minimal";
+
+/* General */
+"general.on" = "On";
+"general.off" = "Off";

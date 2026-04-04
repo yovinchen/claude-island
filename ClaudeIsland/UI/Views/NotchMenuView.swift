@@ -22,117 +22,144 @@ struct NotchMenuView: View {
     @State private var launchAtLogin: Bool = false
     @State private var autoExpandOnTaskComplete: Bool = AppSettings.autoExpandOnTaskComplete
     @State private var suppressAutoExpandWhenFocusedSession: Bool = AppSettings.suppressAutoExpandWhenFocusedSession
+    @State private var autoHideWhenIdle: Bool = AppSettings.autoHideWhenIdle
+    @State private var showUsageData: Bool = AppSettings.showUsageData
+    @State private var globalShortcutEnabled: Bool = AppSettings.globalShortcutEnabled
 
     var body: some View {
-        VStack(spacing: 4) {
-            // Back button
-            MenuRow(
-                icon: "chevron.left",
-                label: "Back"
-            ) {
-                viewModel.toggleMenu()
-            }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 4) {
+                // Back button
+                MenuRow(
+                    icon: "chevron.left",
+                    label: "Back"
+                ) {
+                    viewModel.toggleMenu()
+                }
 
-            Divider()
-                .background(Color.white.opacity(0.08))
-                .padding(.vertical, 4)
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                    .padding(.vertical, 4)
 
-            // Appearance settings
-            ScreenPickerRow(screenSelector: screenSelector)
-            SoundPickerRow(soundSelector: soundSelector)
+                // Appearance settings
+                ScreenPickerRow(screenSelector: screenSelector)
+                SoundPickerRow(soundSelector: soundSelector)
 
-            Divider()
-                .background(Color.white.opacity(0.08))
-                .padding(.vertical, 4)
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                    .padding(.vertical, 4)
 
-            // Behavior settings
-            MenuToggleRow(
-                icon: "arrow.down.to.line.compact",
-                label: "Auto-expand on Task complete",
-                isOn: autoExpandOnTaskComplete
-            ) {
-                autoExpandOnTaskComplete.toggle()
-                AppSettings.autoExpandOnTaskComplete = autoExpandOnTaskComplete
-            }
+                // Behavior settings
+                MenuToggleRow(
+                    icon: "arrow.down.to.line.compact",
+                    label: "Auto-expand on Task complete",
+                    isOn: autoExpandOnTaskComplete
+                ) {
+                    autoExpandOnTaskComplete.toggle()
+                    AppSettings.autoExpandOnTaskComplete = autoExpandOnTaskComplete
+                }
 
-            MenuToggleRow(
-                icon: "scope",
-                label: "Suppress when focused",
-                isOn: suppressAutoExpandWhenFocusedSession
-            ) {
-                suppressAutoExpandWhenFocusedSession.toggle()
-                AppSettings.suppressAutoExpandWhenFocusedSession = suppressAutoExpandWhenFocusedSession
-            }
+                MenuToggleRow(
+                    icon: "scope",
+                    label: "Suppress when focused",
+                    isOn: suppressAutoExpandWhenFocusedSession
+                ) {
+                    suppressAutoExpandWhenFocusedSession.toggle()
+                    AppSettings.suppressAutoExpandWhenFocusedSession = suppressAutoExpandWhenFocusedSession
+                }
 
-            Divider()
-                .background(Color.white.opacity(0.08))
-                .padding(.vertical, 4)
+                MenuToggleRow(
+                    icon: "eye.slash",
+                    label: "Auto-hide when idle",
+                    isOn: autoHideWhenIdle
+                ) {
+                    autoHideWhenIdle.toggle()
+                    AppSettings.autoHideWhenIdle = autoHideWhenIdle
+                    NotchActivityCoordinator.shared.startIdleCheckIfNeeded()
+                }
 
-            // System settings
-            MenuToggleRow(
-                icon: "power",
-                label: "Launch at Login",
-                isOn: launchAtLogin
-            ) {
-                do {
-                    if launchAtLogin {
-                        try SMAppService.mainApp.unregister()
-                        launchAtLogin = false
-                    } else {
-                        try SMAppService.mainApp.register()
-                        launchAtLogin = true
+                MenuToggleRow(
+                    icon: "chart.bar",
+                    label: "Show usage data",
+                    isOn: showUsageData
+                ) {
+                    showUsageData.toggle()
+                    AppSettings.showUsageData = showUsageData
+                }
+
+                MenuToggleRow(
+                    icon: "keyboard",
+                    label: "Global shortcut (⌘⇧I)",
+                    isOn: globalShortcutEnabled
+                ) {
+                    globalShortcutEnabled.toggle()
+                    AppSettings.globalShortcutEnabled = globalShortcutEnabled
+                    KeyboardShortcutManager.shared.updateRegistration()
+                }
+
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                    .padding(.vertical, 4)
+
+                // Hook status section
+                HookStatusSection()
+
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                    .padding(.vertical, 4)
+
+                // System settings
+                MenuToggleRow(
+                    icon: "power",
+                    label: "Launch at Login",
+                    isOn: launchAtLogin
+                ) {
+                    do {
+                        if launchAtLogin {
+                            try SMAppService.mainApp.unregister()
+                            launchAtLogin = false
+                        } else {
+                            try SMAppService.mainApp.register()
+                            launchAtLogin = true
+                        }
+                    } catch {
+                        print("Failed to toggle launch at login: \(error)")
                     }
-                } catch {
-                    print("Failed to toggle launch at login: \(error)")
+                }
+
+                AccessibilityRow(isEnabled: AXIsProcessTrusted())
+
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                    .padding(.vertical, 4)
+
+                // About
+                UpdateRow(updateManager: updateManager)
+
+                MenuRow(
+                    icon: "star",
+                    label: "Star on GitHub"
+                ) {
+                    if let url = URL(string: "https://github.com/farouqaldori/claude-island") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                    .padding(.vertical, 4)
+
+                MenuRow(
+                    icon: "xmark.circle",
+                    label: "Quit",
+                    isDestructive: true
+                ) {
+                    NSApplication.shared.terminate(nil)
                 }
             }
-
-            MenuToggleRow(
-                icon: "arrow.triangle.2.circlepath",
-                label: "Hooks",
-                isOn: hooksInstalled
-            ) {
-                if hooksInstalled {
-                    HookInstaller.uninstall()
-                    hooksInstalled = false
-                } else {
-                    HookInstaller.installIfNeeded()
-                    hooksInstalled = true
-                }
-            }
-
-            AccessibilityRow(isEnabled: AXIsProcessTrusted())
-
-            Divider()
-                .background(Color.white.opacity(0.08))
-                .padding(.vertical, 4)
-
-            // About
-            UpdateRow(updateManager: updateManager)
-
-            MenuRow(
-                icon: "star",
-                label: "Star on GitHub"
-            ) {
-                if let url = URL(string: "https://github.com/farouqaldori/claude-island") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-
-            Divider()
-                .background(Color.white.opacity(0.08))
-                .padding(.vertical, 4)
-
-            MenuRow(
-                icon: "xmark.circle",
-                label: "Quit",
-                isDestructive: true
-            ) {
-                NSApplication.shared.terminate(nil)
-            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             refreshStates()
@@ -149,7 +176,131 @@ struct NotchMenuView: View {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         autoExpandOnTaskComplete = AppSettings.autoExpandOnTaskComplete
         suppressAutoExpandWhenFocusedSession = AppSettings.suppressAutoExpandWhenFocusedSession
+        autoHideWhenIdle = AppSettings.autoHideWhenIdle
+        showUsageData = AppSettings.showUsageData
+        globalShortcutEnabled = AppSettings.globalShortcutEnabled
         screenSelector.refreshScreens()
+    }
+}
+
+// MARK: - Hook Status Section
+
+struct HookStatusSection: View {
+    @State private var hookStatuses: [SessionSource: Bool] = [:]
+    @State private var autoRepairEnabled: Bool = AppSettings.autoRepairHooks
+
+    private let managedSources: [SessionSource] = [
+        .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot
+    ]
+
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack {
+                Image(systemName: "link")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.5))
+                Text("AI Tool Hooks")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.5))
+                Spacer()
+
+                Button {
+                    HookRepairManager.shared.repairAllNow()
+                    refreshStatuses()
+                } label: {
+                    Text("Repair All")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+
+            ForEach(managedSources, id: \.rawValue) { source in
+                HookSourceRow(
+                    source: source,
+                    isEnabled: AppSettings.isHookEnabled(for: source),
+                    isInstalled: hookStatuses[source] ?? false
+                ) {
+                    let currentlyEnabled = AppSettings.isHookEnabled(for: source)
+                    if currentlyEnabled {
+                        // User is disabling — uninstall the hook
+                        HookInstaller.uninstallSource(source)
+                    } else {
+                        // User is enabling — install the hook
+                        HookInstaller.installSource(source)
+                    }
+                    refreshStatuses()
+                }
+            }
+
+            // Auto-repair toggle
+            MenuToggleRow(
+                icon: "wrench.and.screwdriver",
+                label: "Auto-repair hooks",
+                isOn: autoRepairEnabled
+            ) {
+                autoRepairEnabled.toggle()
+                AppSettings.autoRepairHooks = autoRepairEnabled
+                HookRepairManager.shared.restart()
+            }
+        }
+        .onAppear { refreshStatuses() }
+    }
+
+    private func refreshStatuses() {
+        hookStatuses = HookInstaller.allStatuses()
+        autoRepairEnabled = AppSettings.autoRepairHooks
+    }
+}
+
+// MARK: - Hook Source Row
+
+struct HookSourceRow: View {
+    let source: SessionSource
+    let isEnabled: Bool
+    let isInstalled: Bool
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 6, height: 6)
+
+                Text(source.displayName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.7))
+
+                Spacer()
+
+                Text(statusText)
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var statusColor: Color {
+        if !isEnabled { return .white.opacity(0.3) }
+        return isInstalled ? TerminalColors.green : Color(red: 1.0, green: 0.4, blue: 0.4)
+    }
+
+    private var statusText: String {
+        if !isEnabled { return "Disabled" }
+        return isInstalled ? "Active" : "Not Installed"
     }
 }
 
