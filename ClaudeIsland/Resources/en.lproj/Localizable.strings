@@ -29,6 +29,7 @@
 "settings.auto_expand" = "Auto-expand on Task complete";
 "settings.suppress_focused" = "Suppress when focused";
 "settings.suppress_focused_desc" = "Suppress auto-expand when focused";
+"settings.auto_popup_approval" = "Auto-popup on approval request";
 "settings.auto_hide_idle" = "Auto-hide when idle";
 "settings.show_usage" = "Show usage data";
 "settings.global_shortcut" = "Global shortcut (⌘⇧I)";

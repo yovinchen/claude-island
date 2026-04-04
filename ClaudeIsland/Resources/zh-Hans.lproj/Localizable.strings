@@ -29,6 +29,7 @@
 "settings.auto_expand" = "任务完成自动展开";
 "settings.suppress_focused" = "聚焦时不展开";
 "settings.suppress_focused_desc" = "聚焦时抑制自动展开";
+"settings.auto_popup_approval" = "审批请求时自动弹出";
 "settings.auto_hide_idle" = "空闲时自动隐藏";
 "settings.show_usage" = "显示使用量";
 "settings.global_shortcut" = "全局快捷键 (⌘⇧I)";

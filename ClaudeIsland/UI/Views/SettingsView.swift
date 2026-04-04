@@ -85,6 +85,9 @@ struct SettingsView: View {
         SettingsToggle(label: String(localized: "settings.suppress_focused_desc"),
                       getter: { AppSettings.suppressAutoExpandWhenFocusedSession },
                       setter: { AppSettings.suppressAutoExpandWhenFocusedSession = $0 })
+        SettingsToggle(label: String(localized: "settings.auto_popup_approval"),
+                      getter: { AppSettings.autoPopupOnApproval },
+                      setter: { AppSettings.autoPopupOnApproval = $0 })
         SettingsToggle(label: String(localized: "settings.auto_hide_idle"),
                       getter: { AppSettings.autoHideWhenIdle },
                       setter: { AppSettings.autoHideWhenIdle = $0 })

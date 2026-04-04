@@ -479,12 +479,19 @@ struct NotchView: View {
         let newPendingIds = currentIds.subtracting(previousPendingIds)
 
         if !newPendingIds.isEmpty {
-            // Auto-expand notch when new permission request arrives
-            // Use .manualOpen so it stays open until user acts (won't auto-collapse)
-            if viewModel.status == .closed &&
-               !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
-                viewModel.notchOpen(reason: .notification, presentationMode: .manualOpen)
+            // Always ensure the notch is visible for the indicator
+            isVisible = true
+
+            if AppSettings.autoPopupOnApproval {
+                // Auto-popup mode: expand notch when new permission request arrives
+                // Use .manualOpen so it stays open until user acts (won't auto-collapse)
+                if viewModel.status == .closed &&
+                   !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
+                    viewModel.notchOpen(reason: .notification, presentationMode: .manualOpen)
+                }
             }
+            // Silent mode: just show the indicator icon (amber dot + spinner),
+            // user must click the notch to expand and see approval buttons
         }
 
         previousPendingIds = currentIds

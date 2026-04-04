@@ -94,6 +94,7 @@ enum AppSettings {
         static let autoRepairHooks = "autoRepairHooks"
         static let onboardingCompleted = "onboardingCompleted"
         static let enableSystemNotifications = "enableSystemNotifications"
+        static let autoPopupOnApproval = "autoPopupOnApproval"
     }
 
     // MARK: - Notification Sound
@@ -266,6 +267,22 @@ enum AppSettings {
         }
         set {
             defaults.set(newValue, forKey: Keys.enableSystemNotifications)
+        }
+    }
+
+    // MARK: - Approval Behavior
+
+    /// Whether to auto-expand the notch when a permission request arrives.
+    /// When false (silent mode), only shows the indicator icon without expanding.
+    static var autoPopupOnApproval: Bool {
+        get {
+            if defaults.object(forKey: Keys.autoPopupOnApproval) == nil {
+                return true // Default: auto-popup enabled
+            }
+            return defaults.bool(forKey: Keys.autoPopupOnApproval)
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.autoPopupOnApproval)
         }
     }
 
