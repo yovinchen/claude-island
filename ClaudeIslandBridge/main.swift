@@ -51,6 +51,22 @@ guard let payloadData = try? JSONSerialization.data(withJSONObject: payload, opt
     exit(0)
 }
 
+// Update terminal title for supported terminals (Ghostty)
+let eventName = payload["event"] as? String ?? ""
+if eventName == "SessionStart" || eventName == "UserPromptSubmit" {
+    let sessionId = payload["session_id"] as? String ?? "unknown"
+    let cwd = payload["cwd"] as? String
+    let userText = eventName == "UserPromptSubmit"
+        ? (inputJSON["prompt"] as? String ?? inputJSON["text"] as? String)
+        : nil
+    TerminalTitleManager.setTitle(
+        sessionId: sessionId,
+        cwd: cwd,
+        userText: userText,
+        ttyPath: ttyPath
+    )
+}
+
 // Send to socket and optionally wait for response
 let socketPath = ProcessInfo.processInfo.environment["CLAUDE_ISLAND_SOCKET_PATH"]
     ?? "/tmp/claude-island.sock"

@@ -58,6 +58,9 @@ enum EventMapper {
             payload["status"] = "waiting_for_approval"
         }
 
+        // Collect terminal environment variables for TTY/session correlation
+        payload["_env"] = collectEnv()
+
         return payload
     }
 
@@ -165,5 +168,25 @@ enum EventMapper {
             current = next
         }
         return current
+    }
+
+    // MARK: - Environment Collection
+
+    private static let envKeys = [
+        "TERM_PROGRAM", "ITERM_SESSION_ID", "TERM_SESSION_ID",
+        "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID", "__CFBundleIdentifier",
+        "CONDUCTOR_WORKSPACE_NAME", "CONDUCTOR_PORT", "CURSOR_TRACE_ID",
+        "CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_SOCKET_PATH",
+    ]
+
+    private static func collectEnv() -> [String: String] {
+        var env: [String: String] = [:]
+        let processEnv = ProcessInfo.processInfo.environment
+        for key in envKeys {
+            if let value = processEnv[key] {
+                env[key] = value
+            }
+        }
+        return env
     }
 }
