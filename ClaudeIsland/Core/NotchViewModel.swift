@@ -28,6 +28,7 @@ enum NotchContentType: Equatable {
     case menu
     case chat(SessionState)
     case hookSetup
+    case onboarding
 
     var id: String {
         switch self {
@@ -35,6 +36,7 @@ enum NotchContentType: Equatable {
         case .menu: return "menu"
         case .chat(let session): return "chat-\(session.sessionId)"
         case .hookSetup: return "hookSetup"
+        case .onboarding: return "onboarding"
         }
     }
 }
@@ -88,6 +90,11 @@ class NotchViewModel: ObservableObject {
             return CGSize(
                 width: min(screenRect.width * 0.4, 480),
                 height: 480
+            )
+        case .onboarding:
+            return CGSize(
+                width: min(screenRect.width * 0.4, 480),
+                height: 500
             )
         }
     }
@@ -309,14 +316,17 @@ class NotchViewModel: ObservableObject {
     }
 
     /// Perform boot animation: expand briefly then collapse.
-    /// On first run (hooks not set up), shows the hook setup view instead of collapsing.
+    /// On first run, shows the onboarding flow. If hooks not set up, shows hook setup.
     func performBootAnimation() {
         notchOpen(reason: .boot, presentationMode: .manualOpen)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self = self, self.openReason == .boot else { return }
 
-            if !AppSettings.hookSetupCompleted {
-                // First run: show hook setup
+            if !AppSettings.onboardingCompleted {
+                // First run: show onboarding
+                self.contentType = .onboarding
+            } else if !AppSettings.hookSetupCompleted {
+                // Hooks not set up: show hook setup
                 self.contentType = .hookSetup
             } else {
                 self.notchClose()

@@ -409,6 +409,13 @@ struct NotchView: View {
                         viewModel.contentType = .instances
                     }
                 }
+            case .onboarding:
+                OnboardingView {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        viewModel.contentType = .instances
+                        viewModel.notchClose()
+                    }
+                }
             }
         }
         .frame(width: notchSize.width - 24) // Fixed width to prevent text reflow

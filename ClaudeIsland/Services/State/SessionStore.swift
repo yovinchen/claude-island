@@ -869,6 +869,7 @@ actor SessionStore {
     private func processSessionEnd(sessionId: String) async {
         sessions.removeValue(forKey: sessionId)
         cancelPendingSync(sessionId: sessionId)
+        TerminalTitleManager.shared.clearTitle(for: sessionId)
     }
 
     // MARK: - History Loading
@@ -997,6 +998,11 @@ actor SessionStore {
     private func publishState() {
         let sortedSessions = Array(sessions.values).sorted { $0.projectName < $1.projectName }
         sessionsSubject.send(sortedSessions)
+
+        // Update terminal titles for all active sessions
+        for session in sortedSessions {
+            TerminalTitleManager.shared.updateTitle(for: session)
+        }
     }
 
     // MARK: - Queries

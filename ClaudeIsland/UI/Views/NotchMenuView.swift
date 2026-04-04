@@ -137,6 +137,27 @@ struct NotchMenuView: View {
                 UpdateRow(updateManager: updateManager)
 
                 MenuRow(
+                    icon: "gearshape",
+                    label: "Open Settings"
+                ) {
+                    SettingsWindowController.show()
+                }
+
+                MenuRow(
+                    icon: "doc.text",
+                    label: "Export Diagnostic Log"
+                ) {
+                    Task {
+                        let log = await DiagnosticLogger.shared.export()
+                        await MainActor.run {
+                            let pasteboard = NSPasteboard.general
+                            pasteboard.clearContents()
+                            pasteboard.setString(log, forType: .string)
+                        }
+                    }
+                }
+
+                MenuRow(
                     icon: "star",
                     label: "Star on GitHub"
                 ) {
@@ -190,7 +211,8 @@ struct HookStatusSection: View {
     @State private var autoRepairEnabled: Bool = AppSettings.autoRepairHooks
 
     private let managedSources: [SessionSource] = [
-        .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot
+        .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot,
+        .factory, .qoder, .droid, .codebuddy
     ]
 
     var body: some View {

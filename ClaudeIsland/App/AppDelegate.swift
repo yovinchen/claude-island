@@ -75,6 +75,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if AppSettings.autoRepairHooks {
             HookRepairManager.shared.start()
         }
+        // Start Codex Desktop watchers
+        CodexSessionWatcher.shared.start()
+        CodexDesktopApprovalWatcher.shared.start()
         KeyboardShortcutManager.shared.register()
         NSApplication.shared.setActivationPolicy(.accessory)
 
@@ -104,6 +107,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateCheckTimer?.invalidate()
         screenObserver = nil
         HookRepairManager.shared.stop()
+        CodexSessionWatcher.shared.stop()
+        CodexDesktopApprovalWatcher.shared.stop()
         KeyboardShortcutManager.shared.unregister()
         NotchActivityCoordinator.shared.cancelAllTimers()
     }

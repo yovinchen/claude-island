@@ -92,6 +92,7 @@ enum AppSettings {
         static let hookEnabledPrefix = "hookEnabled_"
         static let hookSetupCompleted = "hookSetupCompleted"
         static let autoRepairHooks = "autoRepairHooks"
+        static let onboardingCompleted = "onboardingCompleted"
     }
 
     // MARK: - Notification Sound
@@ -231,6 +232,12 @@ enum AppSettings {
     static var hookSetupCompleted: Bool {
         get { defaults.bool(forKey: Keys.hookSetupCompleted) }
         set { defaults.set(newValue, forKey: Keys.hookSetupCompleted) }
+    }
+
+    /// Whether the user has completed the onboarding flow
+    static var onboardingCompleted: Bool {
+        get { defaults.bool(forKey: Keys.onboardingCompleted) }
+        set { defaults.set(newValue, forKey: Keys.onboardingCompleted) }
     }
 
     /// Whether to auto-repair hooks when they are externally modified

@@ -229,6 +229,7 @@ class HookSocketServer {
         }
 
         logger.info("Listening on \(Self.socketPath, privacy: .public)")
+        Task { await DiagnosticLogger.shared.log("Socket server started on \(Self.socketPath)", category: .socket) }
 
         acceptSource = DispatchSource.makeReadSource(fileDescriptor: serverSocket, queue: queue)
         acceptSource?.setEventHandler { [weak self] in
@@ -457,6 +458,7 @@ class HookSocketServer {
         }
 
         logger.debug("Received: \(event.event, privacy: .public) for \(event.sessionId.prefix(8), privacy: .public)")
+        Task { await DiagnosticLogger.shared.log("Received \(event.event) from \(event.source.rawValue) session:\(event.sessionId.prefix(8))", category: .socket) }
 
         if event.event == "PreToolUse" {
             cacheToolUseId(event: event)

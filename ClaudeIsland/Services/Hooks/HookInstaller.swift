@@ -40,10 +40,14 @@ struct HookInstaller {
         GeminiHookSource(),
         CursorHookSource(),
         OpenCodeHookSource(),
-        CopilotHookSource()
+        CopilotHookSource(),
+        FactoryHookSource(),
+        QoderHookSource(),
+        DroidHookSource(),
+        CodeBuddyHookSource()
     ]
 
-    /// Get bridge path - prefers the compiled Swift bridge, falls back to Python script
+    /// Get bridge path - prefers the compiled Swift bridge, falls back to launcher script, then Python
     static func bridgePath() -> String {
         // Check for Swift bridge in app bundle
         if let bundlePath = Bundle.main.executableURL?
@@ -60,18 +64,45 @@ struct HookInstaller {
             return installedBridge
         }
 
+        // Check for installed launcher script
+        let launcherPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin/claude-island-bridge-launcher.sh").path
+        if FileManager.default.fileExists(atPath: launcherPath) {
+            return launcherPath
+        }
+
         // Fall back to Python script
         return "\(detectPython()) ~/.claude/hooks/claude-island-state.py"
+    }
+
+    /// Install the bridge launcher script to ~/.claude-island/bin/
+    static func installLauncher() {
+        let binDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin")
+        let launcherDest = binDir.appendingPathComponent("claude-island-bridge-launcher.sh")
+
+        try? FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
+
+        if let bundled = Bundle.main.url(forResource: "claude-island-bridge-launcher", withExtension: "sh") {
+            try? FileManager.default.removeItem(at: launcherDest)
+            try? FileManager.default.copyItem(at: bundled, to: launcherDest)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: launcherDest.path
+            )
+        }
     }
 
     // MARK: - Public API
 
     /// Install ONLY user-enabled integrations. Called after user completes hook setup.
     static func installEnabledOnly() {
+        installLauncher()
         let bridge = bridgePath()
         for source in allSources {
             if AppSettings.isHookEnabled(for: source.sourceType) {
                 try? source.install(bridgePath: bridge)
+                Task { await DiagnosticLogger.shared.log("Installed hook for \(source.displayName)", category: .hook) }
             }
         }
         // Only install Python script if Claude hook is enabled
@@ -149,6 +180,26 @@ struct HookInstaller {
         // Copilot: check ~/.copilot
         if fm.fileExists(atPath: "\(home)/.copilot") {
             installed.append(.copilot)
+        }
+
+        // Factory: check ~/.factory
+        if fm.fileExists(atPath: "\(home)/.factory") {
+            installed.append(.factory)
+        }
+
+        // Qoder: check ~/.qoder
+        if fm.fileExists(atPath: "\(home)/.qoder") {
+            installed.append(.qoder)
+        }
+
+        // Droid: check ~/.droid
+        if fm.fileExists(atPath: "\(home)/.droid") {
+            installed.append(.droid)
+        }
+
+        // CodeBuddy: check ~/.codebuddy
+        if fm.fileExists(atPath: "\(home)/.codebuddy") {
+            installed.append(.codebuddy)
         }
 
         return installed
@@ -916,4 +967,148 @@ struct CopilotHookSource: HookSource {
             return false
         }
     }
+}
+
+// MARK: - Generic JSON Settings Hook Source (shared by Factory, Qoder, Droid, CodeBuddy)
+
+private struct GenericSettingsHookSource: HookSource {
+    let sourceType: SessionSource
+    let displayName: String
+    let configPath: String
+    private let sourceName: String
+
+    init(sourceType: SessionSource, displayName: String, configDir: String, sourceName: String) {
+        self.sourceType = sourceType
+        self.displayName = displayName
+        self.configPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("\(configDir)/settings.json").path
+        self.sourceName = sourceName
+    }
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+        let command = "\(bridgePath) --source \(sourceName)"
+        let hookEntry: [String: Any] = ["type": "command", "command": command]
+
+        let events = ["sessionStart", "sessionEnd", "preToolUse", "postToolUse", "stop", "notification"]
+
+        for event in events {
+            if var existing = hooks[event] as? [[String: Any]] {
+                let hasOur = existing.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+                if !hasOur {
+                    existing.append(hookEntry)
+                    hooks[event] = existing
+                }
+            } else {
+                hooks[event] = [hookEntry]
+            }
+        }
+
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try data.write(to: configURL)
+        }
+    }
+
+    func uninstall() throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        guard let data = try? Data(contentsOf: configURL),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hooks = json["hooks"] as? [String: Any] else { return }
+
+        for (event, value) in hooks {
+            if var entries = value as? [[String: Any]] {
+                entries.removeAll { ($0["command"] as? String)?.contains("claude-island") == true }
+                if entries.isEmpty { hooks.removeValue(forKey: event) } else { hooks[event] = entries }
+            }
+        }
+
+        if hooks.isEmpty { json.removeValue(forKey: "hooks") } else { json["hooks"] = hooks }
+
+        if let updated = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try updated.write(to: configURL)
+        }
+    }
+
+    func isInstalled() -> Bool {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else { return false }
+
+        return hooks.values.contains { value in
+            if let entries = value as? [[String: Any]] {
+                return entries.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+            }
+            return false
+        }
+    }
+}
+
+// MARK: - Factory Hook Source
+
+struct FactoryHookSource: HookSource {
+    private let inner = GenericSettingsHookSource(
+        sourceType: .factory, displayName: "Factory", configDir: ".factory", sourceName: "factory"
+    )
+    var sourceType: SessionSource { inner.sourceType }
+    var displayName: String { inner.displayName }
+    var configPath: String { inner.configPath }
+    func install(bridgePath: String) throws { try inner.install(bridgePath: bridgePath) }
+    func uninstall() throws { try inner.uninstall() }
+    func isInstalled() -> Bool { inner.isInstalled() }
+}
+
+// MARK: - Qoder Hook Source
+
+struct QoderHookSource: HookSource {
+    private let inner = GenericSettingsHookSource(
+        sourceType: .qoder, displayName: "Qoder", configDir: ".qoder", sourceName: "qoder"
+    )
+    var sourceType: SessionSource { inner.sourceType }
+    var displayName: String { inner.displayName }
+    var configPath: String { inner.configPath }
+    func install(bridgePath: String) throws { try inner.install(bridgePath: bridgePath) }
+    func uninstall() throws { try inner.uninstall() }
+    func isInstalled() -> Bool { inner.isInstalled() }
+}
+
+// MARK: - Droid Hook Source
+
+struct DroidHookSource: HookSource {
+    private let inner = GenericSettingsHookSource(
+        sourceType: .droid, displayName: "Droid", configDir: ".droid", sourceName: "droid"
+    )
+    var sourceType: SessionSource { inner.sourceType }
+    var displayName: String { inner.displayName }
+    var configPath: String { inner.configPath }
+    func install(bridgePath: String) throws { try inner.install(bridgePath: bridgePath) }
+    func uninstall() throws { try inner.uninstall() }
+    func isInstalled() -> Bool { inner.isInstalled() }
+}
+
+// MARK: - CodeBuddy Hook Source
+
+struct CodeBuddyHookSource: HookSource {
+    private let inner = GenericSettingsHookSource(
+        sourceType: .codebuddy, displayName: "CodeBuddy", configDir: ".codebuddy", sourceName: "codebuddy"
+    )
+    var sourceType: SessionSource { inner.sourceType }
+    var displayName: String { inner.displayName }
+    var configPath: String { inner.configPath }
+    func install(bridgePath: String) throws { try inner.install(bridgePath: bridgePath) }
+    func uninstall() throws { try inner.uninstall() }
+    func isInstalled() -> Bool { inner.isInstalled() }
 }

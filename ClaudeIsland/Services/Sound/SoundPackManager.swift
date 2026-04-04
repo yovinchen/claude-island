@@ -19,7 +19,35 @@ enum SoundEvent {
 class SoundPackManager {
     static let shared = SoundPackManager()
 
-    private init() {}
+    /// Cached NSSound instances, invalidated on device change
+    private var soundCache: [String: NSSound] = [:]
+
+    private init() {
+        SoundOutputDeviceObserver.shared.onDeviceChanged = { [weak self] in
+            self?.invalidateCache()
+        }
+        SoundOutputDeviceObserver.shared.startObserving()
+    }
+
+    /// Invalidate cached sound instances (called on audio device change)
+    private func invalidateCache() {
+        for (_, sound) in soundCache {
+            sound.stop()
+        }
+        soundCache.removeAll()
+    }
+
+    /// Get or create a cached NSSound
+    private func sound(named name: String) -> NSSound? {
+        if let cached = soundCache[name] {
+            return cached
+        }
+        if let sound = NSSound(named: name) {
+            soundCache[name] = sound
+            return sound
+        }
+        return nil
+    }
 
     /// Play the sound for a given event using the current theme pack
     func play(_ event: SoundEvent) {
@@ -36,7 +64,7 @@ class SoundPackManager {
         }
 
         guard let name = soundName else { return }
-        NSSound(named: name)?.play()
+        sound(named: name)?.play()
     }
 
     /// Preview a sound from a specific pack
@@ -52,6 +80,6 @@ class SoundPackManager {
         }
 
         guard let name = soundName else { return }
-        NSSound(named: name)?.play()
+        sound(named: name)?.play()
     }
 }

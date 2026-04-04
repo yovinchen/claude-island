@@ -19,7 +19,8 @@ struct HookSetupView: View {
     @State private var installComplete: Bool = false
 
     private let allTools: [SessionSource] = [
-        .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot
+        .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot,
+        .factory, .qoder, .droid, .codebuddy
     ]
 
     var body: some View {
@@ -273,6 +274,10 @@ struct ToolSetupRow: View {
         case .cursor: return "~/.cursor/hooks.json"
         case .opencode: return "~/.config/opencode/plugins/"
         case .copilot: return "~/.copilot/config.json"
+        case .factory: return "~/.factory/settings.json"
+        case .qoder: return "~/.qoder/settings.json"
+        case .droid: return "~/.droid/settings.json"
+        case .codebuddy: return "~/.codebuddy/settings.json"
         default: return ""
         }
     }

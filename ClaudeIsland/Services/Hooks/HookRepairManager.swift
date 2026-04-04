@@ -53,7 +53,7 @@ class HookRepairManager: ObservableObject {
 
     /// Manually trigger repair of all hooks
     func repairAllNow() {
-        let managedSources: [SessionSource] = [.claude, .codexCLI, .gemini, .cursor, .opencode, .copilot]
+        let managedSources: [SessionSource] = [.claude, .codexCLI, .gemini, .cursor, .opencode, .copilot, .factory, .qoder, .droid, .codebuddy]
         var repaired: [String] = []
 
         for source in managedSources {
@@ -92,7 +92,7 @@ class HookRepairManager: ObservableObject {
         isPaused = false
 
         // Find which source this config belongs to
-        let managedSources: [SessionSource] = [.claude, .codexCLI, .gemini, .cursor, .opencode, .copilot]
+        let managedSources: [SessionSource] = [.claude, .codexCLI, .gemini, .cursor, .opencode, .copilot, .factory, .qoder, .droid, .codebuddy]
 
         for source in managedSources {
             guard AppSettings.isHookEnabled(for: source) else { continue }
@@ -110,6 +110,7 @@ class HookRepairManager: ObservableObject {
 
                     lastRepairMessage = "Auto-repaired: \(hookSource.displayName)"
                     logger.info("Auto-repaired hook for \(hookSource.displayName, privacy: .public)")
+                    Task { await DiagnosticLogger.shared.log("Auto-repaired hook for \(hookSource.displayName)", category: .repair) }
                 }
                 break
             }
