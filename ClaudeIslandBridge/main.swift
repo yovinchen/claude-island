@@ -51,25 +51,15 @@ guard let payloadData = try? JSONSerialization.data(withJSONObject: payload, opt
     exit(0)
 }
 
-// Check if this is a permission request that expects a response
-let event = payload["event"] as? String ?? ""
-let status = payload["status"] as? String ?? ""
-let expectsResponse = (event == "PermissionRequest" && status == "waiting_for_approval")
-
 // Send to socket and optionally wait for response
 let socketPath = ProcessInfo.processInfo.environment["CLAUDE_ISLAND_SOCKET_PATH"]
     ?? "/tmp/claude-island.sock"
 
 let client = SocketClient(path: socketPath)
 
-if expectsResponse {
-    // For permission requests, send and wait for response
-    if let responseData = client.sendAndReceive(data: payloadData, timeout: 86400) {
-        // Write response to stdout so the calling tool can read it
-        FileHandle.standardOutput.write(responseData)
-    }
+if PermissionHandler.isPermissionRequest(payload: payload) {
+    PermissionHandler.handle(client: client, data: payloadData)
 } else {
-    // Fire and forget
     client.send(data: payloadData)
 }
 

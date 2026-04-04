@@ -49,12 +49,11 @@ struct HookInstaller {
 
     /// Get bridge path - prefers the compiled Swift bridge, falls back to launcher script, then Python
     static func bridgePath() -> String {
-        // Check for Swift bridge in app bundle
-        if let bundlePath = Bundle.main.executableURL?
-            .deletingLastPathComponent()
-            .appendingPathComponent("claude-island-bridge").path,
-           FileManager.default.fileExists(atPath: bundlePath) {
-            return bundlePath
+        // Check for Swift bridge in app bundle (Contents/Helpers/)
+        let helpersPath = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers/claude-island-bridge").path
+        if FileManager.default.fileExists(atPath: helpersPath) {
+            return helpersPath
         }
 
         // Check for installed bridge symlink
