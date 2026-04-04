@@ -2,92 +2,180 @@
 //  HookInstaller.swift
 //  ClaudeIsland
 //
-//  Multi-source hook installer skeleton.
-//  Claude stays fully supported; Codex is installed as a safe, reversible groundwork.
+//  Multi-source hook installer with protocol-based architecture.
+//  Supports Claude, Codex, Gemini, Cursor, OpenCode, and Copilot.
 //
 
 import Foundation
 
+// MARK: - Hook Source Protocol
+
+protocol HookSource {
+    var sourceType: SessionSource { get }
+    var configPath: String { get }
+    var displayName: String { get }
+    func install(bridgePath: String) throws
+    func uninstall() throws
+    func isInstalled() -> Bool
+}
+
+// MARK: - Hook Status
+
+enum HookStatus {
+    case installed
+    case notInstalled
+    case disabled
+    case error(String)
+}
+
+// MARK: - HookInstaller
+
 struct HookInstaller {
+
+    // MARK: - Sources Registry
+
+    private static let allSources: [HookSource] = [
+        ClaudeHookSource(),
+        CodexHookSource(),
+        GeminiHookSource(),
+        CursorHookSource(),
+        OpenCodeHookSource(),
+        CopilotHookSource()
+    ]
+
+    /// Get bridge path - prefers the compiled Swift bridge, falls back to Python script
+    static func bridgePath() -> String {
+        // Check for Swift bridge in app bundle
+        if let bundlePath = Bundle.main.executableURL?
+            .deletingLastPathComponent()
+            .appendingPathComponent("claude-island-bridge").path,
+           FileManager.default.fileExists(atPath: bundlePath) {
+            return bundlePath
+        }
+
+        // Check for installed bridge symlink
+        let installedBridge = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin/claude-island-bridge").path
+        if FileManager.default.fileExists(atPath: installedBridge) {
+            return installedBridge
+        }
+
+        // Fall back to Python script
+        return "\(detectPython()) ~/.claude/hooks/claude-island-state.py"
+    }
 
     // MARK: - Public API
 
-    /// Install all managed integrations on app launch.
+    /// Install ONLY user-enabled integrations. Called after user completes hook setup.
+    static func installEnabledOnly() {
+        let bridge = bridgePath()
+        for source in allSources {
+            if AppSettings.isHookEnabled(for: source.sourceType) {
+                try? source.install(bridgePath: bridge)
+            }
+        }
+        // Only install Python script if Claude hook is enabled
+        if AppSettings.isHookEnabled(for: .claude) {
+            installClaudePythonScript()
+        }
+    }
+
+    /// Legacy: install all managed integrations (kept for backward compat with the toggle in menu).
     static func installIfNeeded() {
-        installClaudeIfNeeded()
-        installCodexIfNeeded()
+        installEnabledOnly()
     }
 
     /// Check whether at least one managed integration is installed.
     static func isInstalled() -> Bool {
-        isClaudeInstalled() || isCodexInstalled()
+        allSources.contains { $0.isInstalled() }
     }
 
     /// Remove all managed integrations.
     static func uninstall() {
-        uninstallClaude()
-        uninstallCodex()
+        for source in allSources {
+            try? source.uninstall()
+        }
     }
 
-    /// Install the Codex groundwork only.
-    static func installCodexIfNeeded() {
-        installCodexIntegration()
+    /// Install a specific source (user-initiated)
+    static func installSource(_ source: SessionSource) {
+        let bridge = bridgePath()
+        guard let hookSource = allSources.first(where: { $0.sourceType == source }) else { return }
+        try? hookSource.install(bridgePath: bridge)
+        AppSettings.setHookEnabled(true, for: source)
     }
 
-    /// Check whether the Codex groundwork is installed.
-    static func isCodexInstalled() -> Bool {
-        let hooksURL = codexHooksURL()
-        let scriptURL = codexHookScriptURL()
+    /// Uninstall a specific source (user-initiated)
+    static func uninstallSource(_ source: SessionSource) {
+        guard let hookSource = allSources.first(where: { $0.sourceType == source }) else { return }
+        try? hookSource.uninstall()
+        AppSettings.setHookEnabled(false, for: source)
+    }
 
-        guard FileManager.default.fileExists(atPath: hooksURL.path),
-              FileManager.default.fileExists(atPath: scriptURL.path),
-              let data = try? Data(contentsOf: hooksURL),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = json["hooks"] as? [String: Any] else {
-            return false
+    /// Detect which AI tools are installed on the system
+    static func detectInstalledTools() -> [SessionSource] {
+        var installed: [SessionSource] = []
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.path
+
+        // Claude: check ~/.claude directory
+        if fm.fileExists(atPath: "\(home)/.claude") {
+            installed.append(.claude)
         }
 
-        return containsManagedCodexHook(in: hooks, scriptPath: scriptURL.path)
-    }
-
-    /// Remove the Codex groundwork only.
-    static func uninstallCodex() {
-        let hooksURL = codexHooksURL()
-        let scriptURL = codexHookScriptURL()
-        let codexDir = codexIntegrationRootURL()
-
-        if let data = try? Data(contentsOf: hooksURL),
-           var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           var hooks = json["hooks"] as? [String: Any] {
-            removeManagedCodexHooks(from: &hooks, scriptPath: scriptURL.path)
-
-            if hooks.isEmpty {
-                json.removeValue(forKey: "hooks")
-            } else {
-                json["hooks"] = hooks
-            }
-
-            if let updated = try? JSONSerialization.data(
-                withJSONObject: json,
-                options: [.prettyPrinted, .sortedKeys]
-            ) {
-                try? updated.write(to: hooksURL)
-            }
+        // Codex: check ~/.codex directory
+        if fm.fileExists(atPath: "\(home)/.codex") {
+            installed.append(.codexCLI)
         }
 
-        try? FileManager.default.removeItem(at: scriptURL)
-        try? FileManager.default.removeItem(at: codexDir)
+        // Gemini: check for gemini CLI
+        if fm.fileExists(atPath: "\(home)/.gemini") ||
+           fm.fileExists(atPath: "/usr/local/bin/gemini") ||
+           fm.fileExists(atPath: "/opt/homebrew/bin/gemini") {
+            installed.append(.gemini)
+        }
+
+        // Cursor: check ~/.cursor or /Applications/Cursor.app
+        if fm.fileExists(atPath: "\(home)/.cursor") ||
+           fm.fileExists(atPath: "/Applications/Cursor.app") {
+            installed.append(.cursor)
+        }
+
+        // OpenCode: check ~/.config/opencode
+        if fm.fileExists(atPath: "\(home)/.config/opencode") {
+            installed.append(.opencode)
+        }
+
+        // Copilot: check ~/.copilot
+        if fm.fileExists(atPath: "\(home)/.copilot") {
+            installed.append(.copilot)
+        }
+
+        return installed
     }
 
-    // MARK: - Claude Integration
+    /// Get installation status for all sources
+    static func allStatuses() -> [SessionSource: Bool] {
+        var result: [SessionSource: Bool] = [:]
+        for source in allSources {
+            result[source.sourceType] = source.isInstalled()
+        }
+        return result
+    }
 
-    /// Install hook script and update settings.json on app launch.
-    static func installClaudeIfNeeded() {
+    /// Get the HookSource for a specific type
+    static func hookSource(for type: SessionSource) -> HookSource? {
+        allSources.first { $0.sourceType == type }
+    }
+
+    // MARK: - Legacy Claude Support
+
+    /// Install the Python hook script (still needed for Claude Code compatibility)
+    private static func installClaudePythonScript() {
         let claudeDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude")
         let hooksDir = claudeDir.appendingPathComponent("hooks")
         let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
-        let settings = claudeDir.appendingPathComponent("settings.json")
 
         try? FileManager.default.createDirectory(
             at: hooksDir,
@@ -102,51 +190,76 @@ struct HookInstaller {
                 ofItemAtPath: pythonScript.path
             )
         }
-
-        updateClaudeSettings(at: settings)
     }
 
-    /// Check whether the Claude integration is installed.
-    static func isClaudeInstalled() -> Bool {
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+    // MARK: - Helpers
 
-        guard let data = try? Data(contentsOf: settings),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = json["hooks"] as? [String: Any] else {
-            return false
-        }
+    static func detectPython() -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = ["python3"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
 
-        for (_, value) in hooks {
-            if let entries = value as? [[String: Any]] {
-                for entry in entries {
-                    if let entryHooks = entry["hooks"] as? [[String: Any]] {
-                        for hook in entryHooks {
-                            if let cmd = hook["command"] as? String,
-                               cmd.contains("claude-island-state.py") {
-                                return true
-                            }
-                        }
-                    }
-                }
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                return "python3"
             }
-        }
+        } catch {}
 
-        return false
+        return "python"
+    }
+}
+
+// MARK: - Claude Hook Source
+
+struct ClaudeHookSource: HookSource {
+    var sourceType: SessionSource { .claude }
+    var displayName: String { "Claude Code" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/settings.json").path
     }
 
-    /// Uninstall the Claude integration.
-    static func uninstallClaude() {
+    func install(bridgePath: String) throws {
+        let settingsURL = URL(fileURLWithPath: configPath)
+        let claudeDir = settingsURL.deletingLastPathComponent()
+
+        try? FileManager.default.createDirectory(
+            at: claudeDir,
+            withIntermediateDirectories: true
+        )
+
+        // Install Python hook script
+        let hooksDir = claudeDir.appendingPathComponent("hooks")
+        try? FileManager.default.createDirectory(at: hooksDir, withIntermediateDirectories: true)
+
+        if let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") {
+            let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
+            try? FileManager.default.removeItem(at: pythonScript)
+            try? FileManager.default.copyItem(at: bundled, to: pythonScript)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: pythonScript.path
+            )
+        }
+
+        updateClaudeSettings(at: settingsURL)
+    }
+
+    func uninstall() throws {
         let claudeDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude")
         let hooksDir = claudeDir.appendingPathComponent("hooks")
         let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+        let settingsURL = URL(fileURLWithPath: configPath)
 
         try? FileManager.default.removeItem(at: pythonScript)
 
-        guard let data = try? Data(contentsOf: settings),
+        guard let data = try? Data(contentsOf: settingsURL),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               var hooks = json["hooks"] as? [String: Any] else {
             return
@@ -158,7 +271,7 @@ struct HookInstaller {
                     if let entryHooks = entry["hooks"] as? [[String: Any]] {
                         return entryHooks.contains { hook in
                             let cmd = hook["command"] as? String ?? ""
-                            return cmd.contains("claude-island-state.py")
+                            return cmd.contains("claude-island")
                         }
                     }
                     return false
@@ -182,315 +295,43 @@ struct HookInstaller {
             withJSONObject: json,
             options: [.prettyPrinted, .sortedKeys]
         ) {
-            try? data.write(to: settings)
+            try? data.write(to: settingsURL)
         }
     }
 
-    // MARK: - Codex Groundwork
-
-    private static func installCodexIntegration() {
-        let codexDir = codexIntegrationRootURL()
-        let binDir = codexDir.appendingPathComponent("bin")
-        let scriptURL = codexHookScriptURL()
-        let hooksURL = codexHooksURL()
-
-        try? FileManager.default.createDirectory(
-            at: binDir,
-            withIntermediateDirectories: true
-        )
-
-        if !FileManager.default.fileExists(atPath: codexDir.path) {
-            try? FileManager.default.createDirectory(
-                at: codexDir,
-                withIntermediateDirectories: true
-            )
+    func isInstalled() -> Bool {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else {
+            return false
         }
 
-        writeCodexHookScript(at: scriptURL)
-        updateCodexHooks(at: hooksURL, scriptURL: scriptURL)
-    }
-
-    private static func updateCodexHooks(at hooksURL: URL, scriptURL: URL) {
-        var json: [String: Any] = [:]
-        if let data = try? Data(contentsOf: hooksURL),
-           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            json = existing
-        }
-
-        var hooks = json["hooks"] as? [String: Any] ?? [:]
-        let command = scriptURL.path
-        let codexHooks = codexHookDefinitions(command: command)
-
-        for (event, config) in codexHooks {
-            if var existingEvent = hooks[event] as? [[String: Any]] {
-                let hasOurHook = existingEvent.contains { entry in
-                    guard let entryCommand = codexCommand(from: entry) else { return false }
-                    return entryCommand == command
-                }
-                if !hasOurHook {
-                    existingEvent.append(config)
-                    hooks[event] = existingEvent
-                }
-            } else {
-                hooks[event] = [config]
-            }
-        }
-
-        json["version"] = json["version"] as? Int ?? 1
-        json["hooks"] = hooks
-
-        if let data = try? JSONSerialization.data(
-            withJSONObject: json,
-            options: [.prettyPrinted, .sortedKeys]
-        ) {
-            try? data.write(to: hooksURL)
-        }
-    }
-
-    private static func writeCodexHookScript(at url: URL) {
-        let script = """
-        #!/usr/bin/env python3
-        import json
-        import os
-        import socket
-        import sys
-
-        SOCKET_PATH = os.environ.get("CLAUDE_ISLAND_SOCKET_PATH", "/tmp/claude-island.sock")
-
-        def first_string(*values):
-            for value in values:
-                if isinstance(value, str) and value:
-                    return value
-            return None
-
-        def nested_value(obj, *keys):
-            current = obj
-            for key in keys:
-                if not isinstance(current, dict):
-                    return None
-                current = current.get(key)
-            return current
-
-        def normalize_event_name(event_name):
-            value = (event_name or "").strip()
-            if not value:
-                return "unknown"
-            aliases = {
-                "sessionstart": "SessionStart",
-                "sessionend": "SessionEnd",
-                "userpromptsubmitted": "UserPromptSubmit",
-                "pretooluse": "PreToolUse",
-                "posttooluse": "PostToolUse",
-                "permissionrequest": "PermissionRequest",
-                "agentstop": "Stop",
-                "subagentstop": "SubagentStop",
-                "notification": "Notification",
-                "precompact": "PreCompact",
-                "erroroccurred": "Notification",
-            }
-            key = value.replace("_", "").replace("-", "").lower()
-            return aliases.get(key, value)
-
-        def infer_status(event_name):
-            name = normalize_event_name(event_name)
-            if name in ("PreToolUse",):
-                return "running_tool"
-            if name in ("PostToolUse", "UserPromptSubmit"):
-                return "processing"
-            if name in ("PermissionRequest",):
-                return "waiting_for_approval"
-            if name in ("SessionStart", "Stop", "SubagentStop"):
-                return "waiting_for_input"
-            if name == "SessionEnd":
-                return "ended"
-            if name == "PreCompact":
-                return "compacting"
-            return "unknown"
-
-        def build_payload(data):
-            event_name = first_string(
-                data.get("hook_event_name"),
-                data.get("hookEventName"),
-                data.get("event"),
-                data.get("type"),
-            )
-            session_id = first_string(
-                data.get("session_id"),
-                data.get("sessionId"),
-                nested_value(data, "session", "id"),
-                data.get("id"),
-            ) or "unknown"
-            cwd = first_string(
-                data.get("cwd"),
-                nested_value(data, "session", "cwd"),
-                data.get("workingDirectory"),
-                data.get("workspace"),
-            ) or ""
-            tool_input = data.get("tool_input")
-            if tool_input is None:
-                tool_input = data.get("toolInput")
-            if tool_input is None and isinstance(data.get("tool"), dict):
-                tool_input = data.get("tool", {}).get("input")
-
-            tool_name = first_string(
-                data.get("tool_name"),
-                data.get("toolName"),
-                nested_value(data, "tool", "name"),
-                data.get("tool"),
-            )
-            tool_use_id = first_string(
-                data.get("tool_use_id"),
-                data.get("toolUseId"),
-                nested_value(data, "tool", "id"),
-            )
-            tty = first_string(
-                data.get("tty"),
-                nested_value(data, "session", "tty"),
-            )
-            pid = data.get("pid") or nested_value(data, "session", "pid")
-
-            payload = {
-                "session_id": session_id,
-                "source": "codex_cli",
-                "cwd": cwd,
-                "event": normalize_event_name(event_name),
-                "status": infer_status(event_name),
-                "pid": pid,
-                "tty": tty,
-                "approval_channel": "none",
-            }
-
-            if tool_name is not None:
-                payload["tool"] = tool_name
-            if tool_input is not None:
-                payload["tool_input"] = tool_input
-            if tool_use_id is not None:
-                payload["tool_use_id"] = tool_use_id
-
-            if payload["status"] == "waiting_for_approval":
-                payload["approval_channel"] = "socket"
-
-            return payload
-
-        def send_event(payload):
-            try:
-                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                sock.settimeout(5)
-                sock.connect(SOCKET_PATH)
-                sock.sendall(json.dumps(payload).encode("utf-8"))
-                sock.close()
-            except Exception:
-                return
-
-        def main():
-            try:
-                data = json.load(sys.stdin)
-            except Exception:
-                sys.exit(0)
-
-            if not isinstance(data, dict):
-                sys.exit(0)
-
-            payload = build_payload(data)
-            send_event(payload)
-            sys.exit(0)
-
-        if __name__ == "__main__":
-            main()
-        """
-
-        try? script.write(to: url, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: url.path
-        )
-    }
-
-    private static func codexHookDefinitions(command: String) -> [String: [String: Any]] {
-        let commonHook: [String: Any] = [
-            "type": "command",
-            "bash": command,
-            "timeoutSec": 30,
-            "env": [
-                "CLAUDE_ISLAND_SOURCE": "codex_cli",
-                "CLAUDE_ISLAND_SOCKET_PATH": "/tmp/claude-island.sock"
-            ]
-        ]
-
-        return [
-            "sessionStart": commonHook,
-            "sessionEnd": commonHook,
-            "userPromptSubmitted": commonHook,
-            "preToolUse": commonHook,
-            "postToolUse": commonHook,
-            "agentStop": commonHook,
-            "subagentStop": commonHook,
-            "errorOccurred": commonHook
-        ]
-    }
-
-    private static func containsManagedCodexHook(in hooks: [String: Any], scriptPath: String) -> Bool {
         for (_, value) in hooks {
             if let entries = value as? [[String: Any]] {
                 for entry in entries {
-                    if let command = codexCommand(from: entry), command == scriptPath {
-                        return true
+                    if let entryHooks = entry["hooks"] as? [[String: Any]] {
+                        for hook in entryHooks {
+                            if let cmd = hook["command"] as? String,
+                               cmd.contains("claude-island") {
+                                return true
+                            }
+                        }
                     }
                 }
             }
         }
+
         return false
     }
 
-    private static func removeManagedCodexHooks(from hooks: inout [String: Any], scriptPath: String) {
-        for (event, value) in hooks {
-            if var entries = value as? [[String: Any]] {
-                entries.removeAll { entry in
-                    guard let command = codexCommand(from: entry) else { return false }
-                    return command == scriptPath
-                }
-
-                if entries.isEmpty {
-                    hooks.removeValue(forKey: event)
-                } else {
-                    hooks[event] = entries
-                }
-            }
-        }
-    }
-
-    private static func codexCommand(from entry: [String: Any]) -> String? {
-        if let command = entry["bash"] as? String {
-            return command
-        }
-        if let command = entry["command"] as? String {
-            return command
-        }
-        return nil
-    }
-
-    private static func codexIntegrationRootURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/claude-island")
-    }
-
-    private static func codexHookScriptURL() -> URL {
-        codexIntegrationRootURL().appendingPathComponent("codex-island-hook.py")
-    }
-
-    private static func codexHooksURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/hooks.json")
-    }
-
-    // MARK: - Claude Helpers
-
-    private static func updateClaudeSettings(at settingsURL: URL) {
+    private func updateClaudeSettings(at settingsURL: URL) {
         var json: [String: Any] = [:]
         if let data = try? Data(contentsOf: settingsURL),
            let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             json = existing
         }
 
-        let python = detectPython()
+        let python = HookInstaller.detectPython()
         let command = "\(python) ~/.claude/hooks/claude-island-state.py"
         let hookEntry: [[String: Any]] = [["type": "command", "command": command]]
         let hookEntryWithTimeout: [[String: Any]] = [["type": "command", "command": command, "timeout": 86400]]
@@ -523,7 +364,7 @@ struct HookInstaller {
                     if let entryHooks = entry["hooks"] as? [[String: Any]] {
                         return entryHooks.contains { h in
                             let cmd = h["command"] as? String ?? ""
-                            return cmd.contains("claude-island-state.py")
+                            return cmd.contains("claude-island")
                         }
                     }
                     return false
@@ -546,22 +387,533 @@ struct HookInstaller {
             try? data.write(to: settingsURL)
         }
     }
+}
 
-    private static func detectPython() -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = ["python3"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+// MARK: - Codex Hook Source
 
-        do {
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus == 0 {
-                return "python3"
+struct CodexHookSource: HookSource {
+    var sourceType: SessionSource { .codexCLI }
+    var displayName: String { "Codex CLI" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/hooks.json").path
+    }
+
+    private var scriptURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/claude-island/codex-island-hook.py")
+    }
+
+    func install(bridgePath: String) throws {
+        let codexDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/claude-island")
+        let binDir = codexDir.appendingPathComponent("bin")
+
+        try? FileManager.default.createDirectory(
+            at: binDir,
+            withIntermediateDirectories: true
+        )
+
+        writeCodexHookScript(at: scriptURL)
+        updateCodexHooks(at: URL(fileURLWithPath: configPath), scriptURL: scriptURL)
+    }
+
+    func uninstall() throws {
+        let hooksURL = URL(fileURLWithPath: configPath)
+
+        if let data = try? Data(contentsOf: hooksURL),
+           var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           var hooks = json["hooks"] as? [String: Any] {
+            removeManagedHooks(from: &hooks, scriptPath: scriptURL.path)
+
+            if hooks.isEmpty {
+                json.removeValue(forKey: "hooks")
+            } else {
+                json["hooks"] = hooks
             }
-        } catch {}
 
-        return "python"
+            if let updated = try? JSONSerialization.data(
+                withJSONObject: json,
+                options: [.prettyPrinted, .sortedKeys]
+            ) {
+                try? updated.write(to: hooksURL)
+            }
+        }
+
+        try? FileManager.default.removeItem(at: scriptURL)
+    }
+
+    func isInstalled() -> Bool {
+        let hooksURL = URL(fileURLWithPath: configPath)
+        guard FileManager.default.fileExists(atPath: hooksURL.path),
+              FileManager.default.fileExists(atPath: scriptURL.path),
+              let data = try? Data(contentsOf: hooksURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else {
+            return false
+        }
+
+        return containsManagedHook(in: hooks, scriptPath: scriptURL.path)
+    }
+
+    private func writeCodexHookScript(at url: URL) {
+        let script = """
+        #!/usr/bin/env python3
+        import json, os, socket, sys
+
+        SOCKET_PATH = os.environ.get("CLAUDE_ISLAND_SOCKET_PATH", "/tmp/claude-island.sock")
+
+        def first_string(*values):
+            for v in values:
+                if isinstance(v, str) and v: return v
+            return None
+
+        def nested(obj, *keys):
+            c = obj
+            for k in keys:
+                if not isinstance(c, dict): return None
+                c = c.get(k)
+            return c
+
+        def normalize(name):
+            v = (name or "").strip()
+            if not v: return "unknown"
+            a = {"sessionstart":"SessionStart","sessionend":"SessionEnd","userpromptsubmitted":"UserPromptSubmit",
+                 "pretooluse":"PreToolUse","posttooluse":"PostToolUse","permissionrequest":"PermissionRequest",
+                 "agentstop":"Stop","subagentstop":"SubagentStop","notification":"Notification",
+                 "precompact":"PreCompact","erroroccurred":"Notification"}
+            return a.get(v.replace("_","").replace("-","").lower(), v)
+
+        def infer_status(n):
+            m = {"PreToolUse":"running_tool","PostToolUse":"processing","UserPromptSubmit":"processing",
+                 "PermissionRequest":"waiting_for_approval","SessionStart":"waiting_for_input",
+                 "Stop":"waiting_for_input","SubagentStop":"waiting_for_input",
+                 "SessionEnd":"ended","PreCompact":"compacting"}
+            return m.get(n, "unknown")
+
+        def build(data):
+            ev = normalize(first_string(data.get("hook_event_name"),data.get("hookEventName"),data.get("event"),data.get("type")))
+            sid = first_string(data.get("session_id"),data.get("sessionId"),nested(data,"session","id"),data.get("id")) or "unknown"
+            cwd = first_string(data.get("cwd"),nested(data,"session","cwd"),data.get("workingDirectory")) or ""
+            p = {"session_id":sid,"source":"codex_cli","cwd":cwd,"event":ev,"status":infer_status(ev),"approval_channel":"none"}
+            ti = data.get("tool_input") or data.get("toolInput") or (data.get("tool",{}).get("input") if isinstance(data.get("tool"),dict) else None)
+            tn = first_string(data.get("tool_name"),data.get("toolName"),nested(data,"tool","name"),data.get("tool") if isinstance(data.get("tool"),str) else None)
+            tuid = first_string(data.get("tool_use_id"),data.get("toolUseId"),nested(data,"tool","id"))
+            pid = data.get("pid") or nested(data,"session","pid")
+            tty = first_string(data.get("tty"),nested(data,"session","tty"))
+            if pid: p["pid"]=pid
+            if tty: p["tty"]=tty
+            if tn: p["tool"]=tn
+            if ti: p["tool_input"]=ti
+            if tuid: p["tool_use_id"]=tuid
+            if p["status"]=="waiting_for_approval": p["approval_channel"]="socket"
+            return p
+
+        def send(payload):
+            try:
+                s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(5)
+                s.connect(SOCKET_PATH);s.sendall(json.dumps(payload).encode());s.close()
+            except: pass
+
+        try: data=json.load(sys.stdin)
+        except: sys.exit(0)
+        if isinstance(data,dict): send(build(data))
+        """
+        try? script.write(to: url, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    }
+
+    private func updateCodexHooks(at hooksURL: URL, scriptURL: URL) {
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: hooksURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+        let command = scriptURL.path
+        let commonHook: [String: Any] = [
+            "type": "command", "bash": command, "timeoutSec": 30,
+            "env": ["CLAUDE_ISLAND_SOURCE": "codex_cli", "CLAUDE_ISLAND_SOCKET_PATH": "/tmp/claude-island.sock"]
+        ]
+
+        let events = ["sessionStart", "sessionEnd", "userPromptSubmitted", "preToolUse",
+                       "postToolUse", "agentStop", "subagentStop", "errorOccurred"]
+
+        for event in events {
+            if var existing = hooks[event] as? [[String: Any]] {
+                let hasOur = existing.contains { ($0["bash"] as? String) == command }
+                if !hasOur {
+                    existing.append(commonHook)
+                    hooks[event] = existing
+                }
+            } else {
+                hooks[event] = [commonHook]
+            }
+        }
+
+        json["version"] = json["version"] as? Int ?? 1
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: hooksURL)
+        }
+    }
+
+    private func containsManagedHook(in hooks: [String: Any], scriptPath: String) -> Bool {
+        for (_, value) in hooks {
+            if let entries = value as? [[String: Any]] {
+                for entry in entries {
+                    if (entry["bash"] as? String) == scriptPath || (entry["command"] as? String) == scriptPath {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    private func removeManagedHooks(from hooks: inout [String: Any], scriptPath: String) {
+        for (event, value) in hooks {
+            if var entries = value as? [[String: Any]] {
+                entries.removeAll { entry in
+                    (entry["bash"] as? String) == scriptPath || (entry["command"] as? String) == scriptPath
+                }
+                if entries.isEmpty {
+                    hooks.removeValue(forKey: event)
+                } else {
+                    hooks[event] = entries
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Gemini Hook Source
+
+struct GeminiHookSource: HookSource {
+    var sourceType: SessionSource { .gemini }
+    var displayName: String { "Gemini CLI" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".gemini/settings.json").path
+    }
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+        let command = "\(bridgePath) --source gemini"
+        let hookEntry: [String: Any] = ["type": "command", "command": command]
+
+        let events = ["sessionStart", "sessionEnd", "preToolUse", "postToolUse",
+                       "stop", "notification"]
+
+        for event in events {
+            if var existing = hooks[event] as? [[String: Any]] {
+                let hasOur = existing.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+                if !hasOur {
+                    existing.append(hookEntry)
+                    hooks[event] = existing
+                }
+            } else {
+                hooks[event] = [hookEntry]
+            }
+        }
+
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try data.write(to: configURL)
+        }
+    }
+
+    func uninstall() throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        guard let data = try? Data(contentsOf: configURL),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hooks = json["hooks"] as? [String: Any] else { return }
+
+        removeClaudeIslandHooks(from: &hooks)
+
+        if hooks.isEmpty { json.removeValue(forKey: "hooks") } else { json["hooks"] = hooks }
+
+        if let updated = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try updated.write(to: configURL)
+        }
+    }
+
+    func isInstalled() -> Bool {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else { return false }
+
+        return hooks.values.contains { value in
+            if let entries = value as? [[String: Any]] {
+                return entries.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+            }
+            return false
+        }
+    }
+
+    private func removeClaudeIslandHooks(from hooks: inout [String: Any]) {
+        for (event, value) in hooks {
+            if var entries = value as? [[String: Any]] {
+                entries.removeAll { ($0["command"] as? String)?.contains("claude-island") == true }
+                if entries.isEmpty { hooks.removeValue(forKey: event) } else { hooks[event] = entries }
+            }
+        }
+    }
+}
+
+// MARK: - Cursor Hook Source
+
+struct CursorHookSource: HookSource {
+    var sourceType: SessionSource { .cursor }
+    var displayName: String { "Cursor" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cursor/hooks.json").path
+    }
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+        let command = "\(bridgePath) --source cursor"
+        let hookEntry: [String: Any] = ["type": "command", "command": command, "timeoutSec": 30]
+
+        let events = ["sessionStart", "sessionEnd", "preToolUse", "postToolUse", "agentStop"]
+
+        for event in events {
+            if var existing = hooks[event] as? [[String: Any]] {
+                let hasOur = existing.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+                if !hasOur {
+                    existing.append(hookEntry)
+                    hooks[event] = existing
+                }
+            } else {
+                hooks[event] = [hookEntry]
+            }
+        }
+
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try data.write(to: configURL)
+        }
+    }
+
+    func uninstall() throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        guard let data = try? Data(contentsOf: configURL),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hooks = json["hooks"] as? [String: Any] else { return }
+
+        for (event, value) in hooks {
+            if var entries = value as? [[String: Any]] {
+                entries.removeAll { ($0["command"] as? String)?.contains("claude-island") == true }
+                if entries.isEmpty { hooks.removeValue(forKey: event) } else { hooks[event] = entries }
+            }
+        }
+
+        if hooks.isEmpty { json.removeValue(forKey: "hooks") } else { json["hooks"] = hooks }
+
+        if let updated = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try updated.write(to: configURL)
+        }
+    }
+
+    func isInstalled() -> Bool {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else { return false }
+
+        return hooks.values.contains { value in
+            if let entries = value as? [[String: Any]] {
+                return entries.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+            }
+            return false
+        }
+    }
+}
+
+// MARK: - OpenCode Hook Source
+
+struct OpenCodeHookSource: HookSource {
+    var sourceType: SessionSource { .opencode }
+    var displayName: String { "OpenCode" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/opencode/plugins/claude-island.js").path
+    }
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let script = """
+        // Claude Island integration for OpenCode
+        const { execSync } = require('child_process');
+
+        module.exports = {
+          name: 'claude-island',
+          hooks: {
+            onSessionStart(session) {
+              notify('SessionStart', session);
+            },
+            onSessionEnd(session) {
+              notify('SessionEnd', session);
+            },
+            onToolStart(tool, session) {
+              notify('PreToolUse', session, tool);
+            },
+            onToolEnd(tool, session) {
+              notify('PostToolUse', session, tool);
+            },
+            onStop(session) {
+              notify('Stop', session);
+            }
+          }
+        };
+
+        function notify(event, session, tool) {
+          const payload = {
+            hook_event_name: event,
+            session_id: session?.id || 'unknown',
+            cwd: session?.cwd || process.cwd(),
+            tool_name: tool?.name,
+            tool_input: tool?.input,
+            tool_use_id: tool?.id,
+            pid: process.pid
+          };
+          try {
+            execSync(`echo '${JSON.stringify(payload)}' | \(bridgePath) --source opencode`, {
+              timeout: 5000,
+              stdio: 'pipe'
+            });
+          } catch {}
+        }
+        """
+
+        try script.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    func uninstall() throws {
+        try? FileManager.default.removeItem(atPath: configPath)
+    }
+
+    func isInstalled() -> Bool {
+        FileManager.default.fileExists(atPath: configPath)
+    }
+}
+
+// MARK: - Copilot Hook Source
+
+struct CopilotHookSource: HookSource {
+    var sourceType: SessionSource { .copilot }
+    var displayName: String { "Copilot" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".copilot/config.json").path
+    }
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+        let command = "\(bridgePath) --source copilot"
+        let hookEntry: [String: Any] = ["type": "command", "command": command]
+
+        let events = ["sessionStart", "sessionEnd", "toolUse", "stop"]
+
+        for event in events {
+            if var existing = hooks[event] as? [[String: Any]] {
+                let hasOur = existing.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+                if !hasOur {
+                    existing.append(hookEntry)
+                    hooks[event] = existing
+                }
+            } else {
+                hooks[event] = [hookEntry]
+            }
+        }
+
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try data.write(to: configURL)
+        }
+    }
+
+    func uninstall() throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        guard let data = try? Data(contentsOf: configURL),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hooks = json["hooks"] as? [String: Any] else { return }
+
+        for (event, value) in hooks {
+            if var entries = value as? [[String: Any]] {
+                entries.removeAll { ($0["command"] as? String)?.contains("claude-island") == true }
+                if entries.isEmpty { hooks.removeValue(forKey: event) } else { hooks[event] = entries }
+            }
+        }
+
+        if hooks.isEmpty { json.removeValue(forKey: "hooks") } else { json["hooks"] = hooks }
+
+        if let updated = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try updated.write(to: configURL)
+        }
+    }
+
+    func isInstalled() -> Bool {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else { return false }
+
+        return hooks.values.contains { value in
+            if let entries = value as? [[String: Any]] {
+                return entries.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+            }
+            return false
+        }
     }
 }
