@@ -458,6 +458,7 @@ struct ChatView: View {
             terminalAppName: session.terminalAppName,
             onApprove: { approvePermission() },
             onAlwaysAllow: { alwaysAllowPermission() },
+            onAllowAll: { allowAllPermission() },
             onAutoApprove: { autoApprovePermission() },
             onDeny: { denyPermission() }
         )
@@ -502,6 +503,10 @@ struct ChatView: View {
 
     private func alwaysAllowPermission() {
         sessionMonitor.alwaysAllowPermission(sessionId: sessionId)
+    }
+
+    private func allowAllPermission() {
+        sessionMonitor.allowAllPermission(sessionId: sessionId)
     }
 
     private func autoApprovePermission() {
@@ -1095,7 +1100,8 @@ struct ChatInteractivePromptBar: View {
 
 // MARK: - Chat Approval Bar
 
-/// Approval bar for the chat view with animated buttons (four-tier)
+/// Approval bar for the chat view with animated buttons
+/// Five-tier matching Vibe Island: Deny / Allow Once / Always Allow / Allow All / Bypass
 struct ChatApprovalBar: View {
     let tool: String
     let toolInput: String?
@@ -1103,6 +1109,7 @@ struct ChatApprovalBar: View {
     let terminalAppName: String?
     let onApprove: () -> Void
     let onAlwaysAllow: () -> Void
+    let onAllowAll: () -> Void
     let onAutoApprove: () -> Void
     let onDeny: () -> Void
 
@@ -1145,59 +1152,69 @@ struct ChatApprovalBar: View {
             .opacity(showContent ? 1 : 0)
             .offset(x: showContent ? 0 : -10)
 
-            // 4 buttons in a row
-            HStack(spacing: 6) {
-                // Deny
+            // Row 1: Deny + Allow Once + Always Allow
+            HStack(spacing: 5) {
                 Button { onDeny() } label: {
                     Text(String(localized: "chat.deny"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 7)
                         .background(Color.white.opacity(0.08))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
 
-                // Allow Once
                 Button { onApprove() } label: {
                     Text(String(localized: "chat.allow_once"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white.opacity(0.9))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 7)
                         .background(Color.white.opacity(0.15))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
 
-                // Allow All
                 Button { onAlwaysAllow() } label: {
-                    Text(String(localized: "chat.allow_all"))
+                    Text(String(localized: "chat.always_allow"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 7)
                         .background(Color.white.opacity(0.25))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+            }
 
-                // Auto Approve
+            // Row 2: Allow All + Bypass
+            HStack(spacing: 5) {
+                Button { onAllowAll() } label: {
+                    Text(String(localized: "chat.allow_all"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(Color.white.opacity(0.35))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
                 Button { onAutoApprove() } label: {
                     Text(String(localized: "chat.auto_approve"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 7)
                         .background(Color.white.opacity(0.9))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
             }
-            .opacity(showButtons ? 1 : 0)
-            .scaleEffect(showButtons ? 1 : 0.95)
         }
+        .opacity(showButtons ? 1 : 0)
+        .scaleEffect(showButtons ? 1 : 0.95)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color.black.opacity(0.2))

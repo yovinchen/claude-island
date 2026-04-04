@@ -258,62 +258,71 @@ struct ApprovalDetailView: View {
             Divider()
                 .background(Color.white.opacity(0.1))
 
-            // Top row: Deny + Allow Once
-            HStack(spacing: 8) {
-                // Deny
+            // Row 1: Deny + Allow Once + Always Allow
+            HStack(spacing: 6) {
                 Button {
                     sessionMonitor.denyPermission(sessionId: session.sessionId, reason: nil)
                 } label: {
                     Text(String(localized: "instances.deny"))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 9)
                         .background(Color.white.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
 
-                // Allow Once
                 Button {
                     sessionMonitor.approvePermission(sessionId: session.sessionId)
                 } label: {
                     Text(String(localized: "instances.allow_once"))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.9))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 9)
                         .background(Color.white.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    sessionMonitor.alwaysAllowPermission(sessionId: session.sessionId)
+                } label: {
+                    Text(String(localized: "instances.always_allow"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(Color.white.opacity(0.25))
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
             }
 
-            // Bottom row: Allow All + Auto Approve
-            HStack(spacing: 8) {
-                // Allow All (for this tool)
+            // Row 2: Allow All + Bypass
+            HStack(spacing: 6) {
                 Button {
-                    sessionMonitor.alwaysAllowPermission(sessionId: session.sessionId)
+                    sessionMonitor.allowAllPermission(sessionId: session.sessionId)
                 } label: {
                     Text(String(localized: "instances.allow_all"))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.25))
+                        .padding(.vertical, 9)
+                        .background(Color.white.opacity(0.35))
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
 
-                // Auto Approve (all tools)
                 Button {
                     sessionMonitor.autoApprovePermission(sessionId: session.sessionId)
                 } label: {
                     Text(String(localized: "instances.auto_approve"))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 9)
                         .background(Color.white.opacity(0.9))
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }

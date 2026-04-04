@@ -76,6 +76,7 @@ struct ClaudeInstancesView: View {
                         onArchive: { archiveSession(session) },
                         onApprove: { approveSession(session) },
                         onAlwaysAllow: { alwaysAllowSession(session) },
+                        onAllowAll: { allowAllSession(session) },
                         onAutoApprove: { autoApproveSession(session) },
                         onReject: { rejectSession(session) },
                         onShowApprovalDetail: { showApprovalDetail(session) }
@@ -108,6 +109,10 @@ struct ClaudeInstancesView: View {
         sessionMonitor.alwaysAllowPermission(sessionId: session.sessionId)
     }
 
+    private func allowAllSession(_ session: SessionState) {
+        sessionMonitor.allowAllPermission(sessionId: session.sessionId)
+    }
+
     private func autoApproveSession(_ session: SessionState) {
         sessionMonitor.autoApprovePermission(sessionId: session.sessionId)
     }
@@ -136,6 +141,7 @@ struct InstanceRow: View {
     let onArchive: () -> Void
     let onApprove: () -> Void
     let onAlwaysAllow: () -> Void
+    let onAllowAll: () -> Void
     let onAutoApprove: () -> Void
     let onReject: () -> Void
     let onShowApprovalDetail: () -> Void
@@ -294,6 +300,7 @@ struct InstanceRow: View {
                 InlineApprovalButtons(
                     onApprove: onApprove,
                     onAlwaysAllow: onAlwaysAllow,
+                    onAllowAll: onAllowAll,
                     onAutoApprove: onAutoApprove,
                     onReject: onReject
                 )
@@ -403,98 +410,108 @@ struct InstanceRow: View {
 
 // MARK: - Inline Approval Buttons
 
-/// Compact inline approval buttons with staggered animation (four-tier: Deny / Allow Once / Allow All / Auto Approve)
+/// Compact inline approval buttons with staggered animation
+/// Five-tier matching Vibe Island: Deny / Allow Once / Always Allow / Allow All / Bypass
 struct InlineApprovalButtons: View {
     let onApprove: () -> Void
     let onAlwaysAllow: () -> Void
+    let onAllowAll: () -> Void
     let onAutoApprove: () -> Void
     let onReject: () -> Void
 
-    @State private var showDenyButton = false
-    @State private var showAllowButton = false
-    @State private var showAlwaysAllowButton = false
-    @State private var showAutoApproveButton = false
+    @State private var showButtons = false
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             // Deny
-            Button {
-                onReject()
-            } label: {
-                Text(String(localized: "instances.deny"))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .opacity(showDenyButton ? 1 : 0)
-            .scaleEffect(showDenyButton ? 1 : 0.8)
+            ApprovalCapsuleButton(
+                label: String(localized: "instances.deny"),
+                style: .deny,
+                action: onReject
+            )
 
             // Allow Once
-            Button {
-                onApprove()
-            } label: {
-                Text(String(localized: "instances.allow_once"))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.9))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.18))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .opacity(showAllowButton ? 1 : 0)
-            .scaleEffect(showAllowButton ? 1 : 0.8)
+            ApprovalCapsuleButton(
+                label: String(localized: "instances.allow_once"),
+                style: .allowOnce,
+                action: onApprove
+            )
 
-            // Allow All (for this tool)
-            Button {
-                onAlwaysAllow()
-            } label: {
-                Text(String(localized: "instances.allow_all"))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.28))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .opacity(showAlwaysAllowButton ? 1 : 0)
-            .scaleEffect(showAlwaysAllowButton ? 1 : 0.8)
+            // Always Allow (tool-specific addRules)
+            ApprovalCapsuleButton(
+                label: String(localized: "instances.always_allow"),
+                style: .alwaysAllow,
+                action: onAlwaysAllow
+            )
 
-            // Auto Approve (most prominent)
-            Button {
-                onAutoApprove()
-            } label: {
-                Text(String(localized: "instances.auto_approve"))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.9))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .opacity(showAutoApproveButton ? 1 : 0)
-            .scaleEffect(showAutoApproveButton ? 1 : 0.8)
+            // Allow All (acceptEdits mode)
+            ApprovalCapsuleButton(
+                label: String(localized: "instances.allow_all"),
+                style: .allowAll,
+                action: onAllowAll
+            )
+
+            // Bypass (bypassPermissions mode - most prominent)
+            ApprovalCapsuleButton(
+                label: String(localized: "instances.auto_approve"),
+                style: .bypass,
+                action: onAutoApprove
+            )
         }
+        .opacity(showButtons ? 1 : 0)
+        .scaleEffect(showButtons ? 1 : 0.85)
         .onAppear {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.0)) {
-                showDenyButton = true
-            }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.05)) {
-                showAllowButton = true
-            }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.1)) {
-                showAlwaysAllowButton = true
-            }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.15)) {
-                showAutoApproveButton = true
+                showButtons = true
             }
         }
+    }
+}
+
+// MARK: - Approval Capsule Button
+
+enum ApprovalButtonStyle {
+    case deny, allowOnce, alwaysAllow, allowAll, bypass
+
+    var foregroundColor: Color {
+        switch self {
+        case .deny: return .white.opacity(0.6)
+        case .allowOnce: return .white.opacity(0.9)
+        case .alwaysAllow: return .white
+        case .allowAll: return .white
+        case .bypass: return .black
+        }
+    }
+
+    var backgroundColor: Color {
+        switch self {
+        case .deny: return Color.white.opacity(0.08)
+        case .allowOnce: return Color.white.opacity(0.15)
+        case .alwaysAllow: return Color.white.opacity(0.25)
+        case .allowAll: return Color.white.opacity(0.4)
+        case .bypass: return Color.white.opacity(0.9)
+        }
+    }
+}
+
+struct ApprovalCapsuleButton: View {
+    let label: String
+    let style: ApprovalButtonStyle
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(style.foregroundColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(style.backgroundColor)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 
