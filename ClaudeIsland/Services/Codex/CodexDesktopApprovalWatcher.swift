@@ -64,9 +64,14 @@ class CodexDesktopApprovalWatcher {
 
                         logger.info("Codex tool \(tool.name, privacy: .public) appears to need approval (silent \(Int(elapsed))s)")
 
-                        // Send a notification event
+                        // Send sound + system notification
                         await MainActor.run {
                             SoundPackManager.shared.play(.approvalRequest)
+                            NotificationManager.shared.sendPermissionNotification(
+                                sessionId: session.sessionId,
+                                toolName: tool.name,
+                                projectName: session.projectName
+                            )
                         }
                     }
                 }

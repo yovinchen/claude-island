@@ -632,23 +632,28 @@ struct CodexHookSource: HookSource {
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
         let command = scriptURL.path
+        let env: [String: String] = ["CLAUDE_ISLAND_SOURCE": "codex_cli", "CLAUDE_ISLAND_SOCKET_PATH": "/tmp/claude-island.sock"]
         let commonHook: [String: Any] = [
-            "type": "command", "bash": command, "timeoutSec": 30,
-            "env": ["CLAUDE_ISLAND_SOURCE": "codex_cli", "CLAUDE_ISLAND_SOCKET_PATH": "/tmp/claude-island.sock"]
+            "type": "command", "bash": command, "timeoutSec": 30, "env": env
+        ]
+        let permissionHook: [String: Any] = [
+            "type": "command", "bash": command, "timeoutSec": 86400, "env": env
         ]
 
         let events = ["sessionStart", "sessionEnd", "userPromptSubmitted", "preToolUse",
-                       "postToolUse", "agentStop", "subagentStop", "errorOccurred"]
+                       "postToolUse", "permissionRequest", "agentStop", "subagentStop",
+                       "preCompact", "errorOccurred"]
 
         for event in events {
+            let hook = event == "permissionRequest" ? permissionHook : commonHook
             if var existing = hooks[event] as? [[String: Any]] {
                 let hasOur = existing.contains { ($0["bash"] as? String) == command }
                 if !hasOur {
-                    existing.append(commonHook)
+                    existing.append(hook)
                     hooks[event] = existing
                 }
             } else {
-                hooks[event] = [commonHook]
+                hooks[event] = [hook]
             }
         }
 

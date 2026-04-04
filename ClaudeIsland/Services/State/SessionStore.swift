@@ -262,6 +262,10 @@ actor SessionStore {
                         break
                     }
                 }
+                // Clear Codex Desktop approval notification state
+                if session.source == .codexDesktop {
+                    CodexDesktopApprovalWatcher.shared.clearNotification(sessionId: session.sessionId)
+                }
             }
 
         default:
