@@ -232,6 +232,9 @@ enum EventMapper {
                 "beforetool": "PreToolUse",
                 "aftertool": "PostToolUse",
                 "beforeagent": "UserPromptSubmit",
+                "beforemodel": "Notification",
+                "beforetoolselection": "Notification",
+                "aftermodel": "Notification",
                 "afteragent": "Stop",
                 "precompress": "PreCompact",
             ]
