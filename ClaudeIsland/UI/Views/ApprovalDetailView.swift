@@ -72,9 +72,17 @@ struct ApprovalDetailView: View {
         .onReceive(sessionMonitor.$instances) { instances in
             if let updated = instances.first(where: { $0.sessionId == session.sessionId }) {
                 if !updated.phase.isWaitingForApproval {
+                    // Navigate back to instances list after a short delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         if case .approval = viewModel.contentType {
                             viewModel.contentType = .instances
+                        }
+                    }
+                    // Auto-collapse the notch after 3 seconds (only if still on instances list)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                        if viewModel.status != .closed,
+                           case .instances = viewModel.contentType {
+                            viewModel.notchClose()
                         }
                     }
                 }
