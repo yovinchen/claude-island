@@ -141,16 +141,15 @@ struct InstanceRow: View {
     let onShowApprovalDetail: () -> Void
 
     @State private var isHovered = false
-    @State private var spinnerPhase = 0
     @State private var isYabaiAvailable = false
     /// Grace period flag: keeps approval UI visible for 2s after phase leaves waitingForApproval
     @State private var keepApprovalVisible = false
     @State private var approvalShowTime: Date? = nil
+    @State private var now = Date()
 
     private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
-    private let spinnerSymbols = ["·", "✢", "✳", "∗", "✻", "✽"]
-    private let spinnerTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
     private let minApprovalDisplaySeconds: TimeInterval = 2.0
+    private let timeTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     /// Whether we're showing the approval UI: real phase OR grace period
     private var isWaitingForApproval: Bool {
@@ -163,168 +162,35 @@ struct InstanceRow: View {
         return toolName == "AskUserQuestion"
     }
 
+    /// Is the crab actively working (animated legs)
+    private var isActive: Bool {
+        session.phase == .processing || session.phase == .compacting
+    }
+
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            // State indicator on left
-            stateIndicator
-                .frame(width: 14)
+        HStack(alignment: .top, spacing: 8) {
+            // Claude crab icon with status overlay
+            crabWithStatus
+                .padding(.top, 2)
 
-            // Text content
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session.displayTitle)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
+            // Main content area
+            VStack(alignment: .leading, spacing: 3) {
+                // Title row: projectName · title + badges on right
+                titleRow
 
-                // Source and terminal badges
-                if session.source != .claude || session.terminalAppName != nil {
-                    HStack(spacing: 4) {
-                        if session.source != .claude {
-                            Text(session.source.displayName)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(Color.white.opacity(0.1))
-                                .clipShape(Capsule())
-                        }
-                        if let termName = session.terminalAppName {
-                            Text(termName)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.white.opacity(0.5))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(Color.white.opacity(0.06))
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
-
-                // Show tool call when waiting for approval, otherwise last activity
-                if isWaitingForApproval, let toolName = session.pendingToolName {
-                    // Show tool name in amber + input on same line
-                    HStack(spacing: 4) {
-                        Text(MCPToolFormatter.formatToolName(toolName))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(TerminalColors.amber.opacity(0.9))
-                        if isInteractiveTool {
-                            Text(String(localized: "instances.needs_input"))
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.5))
-                                .lineLimit(1)
-                        } else if let input = session.pendingToolInput {
-                            Text(input)
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.5))
-                                .lineLimit(1)
-                        }
-                    }
-                } else if let role = session.lastMessageRole {
-                    switch role {
-                    case "tool":
-                        // Tool call - show tool name + input
-                        HStack(spacing: 4) {
-                            if let toolName = session.lastToolName {
-                                Text(MCPToolFormatter.formatToolName(toolName))
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.5))
-                            }
-                            if let input = session.lastMessage {
-                                Text(input)
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.white.opacity(0.4))
-                                    .lineLimit(1)
-                            }
-                        }
-                    case "user":
-                        // User message - prefix with "You:"
-                        HStack(spacing: 4) {
-                            Text(String(localized: "instances.user_prefix"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white.opacity(0.5))
-                            if let msg = session.lastMessage {
-                                Text(msg)
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.white.opacity(0.4))
-                                    .lineLimit(1)
-                            }
-                        }
-                    default:
-                        // Assistant message - just show text
-                        if let msg = session.lastMessage {
-                            Text(msg)
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.4))
-                                .lineLimit(1)
-                        }
-                    }
-                } else if let lastMsg = session.lastMessage {
-                    Text(lastMsg)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.4))
-                        .lineLimit(1)
-                }
+                // Activity info row
+                activityRow
             }
 
             Spacer(minLength: 0)
 
-            // Action icons or approval buttons
-            if isWaitingForApproval && isInteractiveTool {
-                // Interactive tools like AskUserQuestion - show chat + terminal buttons
-                HStack(spacing: 8) {
-                    IconButton(icon: "bubble.left") {
-                        onChat()
-                    }
-
-                    // Go to Terminal button
-                    if session.canFocusTerminal {
-                        TerminalButton(
-                            isEnabled: true,
-                            onTap: { onFocus() }
-                        )
-                    } else if isYabaiAvailable {
-                        TerminalButton(
-                            isEnabled: session.isInTmux,
-                            onTap: { onFocus() }
-                        )
-                    }
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            } else if isWaitingForApproval {
-                InlineApprovalButtons(
-                    onApprove: onApprove,
-                    onAlwaysAllow: onAlwaysAllow,
-                    onAutoApprove: onAutoApprove,
-                    onReject: onReject
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            } else {
-                HStack(spacing: 8) {
-                    // Chat icon - always show
-                    IconButton(icon: "bubble.left") {
-                        onChat()
-                    }
-
-                    // Focus icon (for sessions with focusable terminal)
-                    if session.canFocusTerminal || (session.isInTmux && isYabaiAvailable) {
-                        IconButton(icon: "eye") {
-                            onFocus()
-                        }
-                    }
-
-                    // Archive button - only for idle or completed sessions
-                    if session.phase == .idle || session.phase == .waitingForInput {
-                        IconButton(icon: "archivebox") {
-                            onArchive()
-                        }
-                    }
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            }
+            // Action buttons (right side)
+            actionButtons
+                .padding(.top, 2)
         }
         .padding(.leading, 8)
         .padding(.trailing, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onTapGesture {
             if isWaitingForApproval && !isInteractiveTool {
@@ -339,16 +205,15 @@ struct InstanceRow: View {
                 .fill(isHovered ? Color.white.opacity(0.06) : Color.clear)
         )
         .onHover { isHovered = $0 }
+        .onReceive(timeTimer) { _ in now = Date() }
         .task {
             isYabaiAvailable = await WindowFinder.shared.isYabaiAvailable()
         }
         .onChange(of: session.phase) { oldPhase, newPhase in
             if newPhase.isWaitingForApproval {
-                // Entering approval: record timestamp, clear grace period
                 approvalShowTime = Date()
                 keepApprovalVisible = false
             } else if oldPhase.isWaitingForApproval {
-                // Leaving approval: start grace period
                 if let showTime = approvalShowTime {
                     let elapsed = Date().timeIntervalSince(showTime)
                     if elapsed < minApprovalDisplaySeconds {
@@ -365,40 +230,229 @@ struct InstanceRow: View {
             }
         }
         .onAppear {
+            now = Date()
             if session.phase.isWaitingForApproval {
                 approvalShowTime = Date()
             }
         }
     }
 
-    @ViewBuilder
-    private var stateIndicator: some View {
+    // MARK: - Crab Icon with Status
+
+    private var crabWithStatus: some View {
+        ZStack(alignment: .bottomTrailing) {
+            ClaudeCrabIcon(
+                size: 14,
+                color: crabColor,
+                animateLegs: isActive
+            )
+
+            // Status overlay badge
+            statusBadge
+                .offset(x: 4, y: 4)
+        }
+        .frame(width: 22, height: 22)
+    }
+
+    private var crabColor: Color {
         switch session.phase {
         case .processing, .compacting:
-            Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(claudeOrange)
-                .onReceive(spinnerTimer) { _ in
-                    spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
-                }
+            return claudeOrange
         case .waitingForApproval:
-            Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(TerminalColors.amber)
-                .onReceive(spinnerTimer) { _ in
-                    spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
-                }
+            return TerminalColors.amber
         case .waitingForInput:
-            Circle()
-                .fill(TerminalColors.green)
-                .frame(width: 6, height: 6)
+            return TerminalColors.green
         case .idle, .ended:
-            Circle()
-                .fill(Color.white.opacity(0.2))
-                .frame(width: 6, height: 6)
+            return Color.white.opacity(0.35)
         }
     }
 
+    @ViewBuilder
+    private var statusBadge: some View {
+        switch session.phase {
+        case .processing, .compacting:
+            // Running: small spinning dot
+            Circle()
+                .fill(claudeOrange)
+                .frame(width: 6, height: 6)
+        case .waitingForApproval:
+            // Needs approval: amber "?" badge
+            Text("?")
+                .font(.system(size: 7, weight: .heavy))
+                .foregroundColor(.black)
+                .frame(width: 10, height: 10)
+                .background(Circle().fill(TerminalColors.amber))
+        case .waitingForInput:
+            // Done/ready: green checkmark
+            Image(systemName: "checkmark")
+                .font(.system(size: 5, weight: .bold))
+                .foregroundColor(.black)
+                .frame(width: 10, height: 10)
+                .background(Circle().fill(TerminalColors.green))
+        case .idle, .ended:
+            EmptyView()
+        }
+    }
+
+    // MARK: - Title Row
+
+    private var titleRow: some View {
+        HStack(spacing: 6) {
+            // Project name · display title
+            HStack(spacing: 0) {
+                Text(session.projectName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(1)
+
+                if session.displayTitle != session.projectName {
+                    Text(" · ")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.3))
+
+                    Text(session.displayTitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
+                        .lineLimit(1)
+                }
+            }
+            .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            // Right-aligned badges: source, terminal, time
+            HStack(spacing: 4) {
+                BadgePill(text: session.source.displayName)
+
+                if let termName = session.terminalAppName {
+                    BadgePill(text: termName)
+                }
+
+                BadgePill(
+                    text: SessionPhaseHelpers.timeAgo(session.lastActivity, now: now),
+                    dimmed: true
+                )
+            }
+        }
+    }
+
+    // MARK: - Activity Row
+
+    @ViewBuilder
+    private var activityRow: some View {
+        if isWaitingForApproval, let toolName = session.pendingToolName {
+            HStack(spacing: 4) {
+                Text(MCPToolFormatter.formatToolName(toolName))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(TerminalColors.amber.opacity(0.9))
+                if isInteractiveTool {
+                    Text(String(localized: "instances.needs_input"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                        .lineLimit(1)
+                } else if let input = session.pendingToolInput {
+                    Text(input)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                        .lineLimit(1)
+                }
+            }
+        } else if let role = session.lastMessageRole {
+            switch role {
+            case "tool":
+                HStack(spacing: 4) {
+                    if let toolName = session.lastToolName {
+                        Text(MCPToolFormatter.formatToolName(toolName))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    if let input = session.lastMessage {
+                        Text(input)
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(1)
+                    }
+                }
+            case "user":
+                HStack(spacing: 4) {
+                    Text(String(localized: "instances.user_prefix"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+                    if let msg = session.lastMessage {
+                        Text(msg)
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(1)
+                    }
+                }
+            default:
+                if let msg = session.lastMessage {
+                    Text(msg)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.4))
+                        .lineLimit(1)
+                }
+            }
+        } else if let lastMsg = session.lastMessage {
+            Text(lastMsg)
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.4))
+                .lineLimit(1)
+        }
+    }
+
+    // MARK: - Action Buttons
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        if isWaitingForApproval && isInteractiveTool {
+            HStack(spacing: 8) {
+                IconButton(icon: "bubble.left") { onChat() }
+                if session.canFocusTerminal {
+                    IconButton(icon: "eye") { onFocus() }
+                } else if isYabaiAvailable && session.isInTmux {
+                    IconButton(icon: "eye") { onFocus() }
+                }
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        } else if isWaitingForApproval {
+            InlineApprovalButtons(
+                onApprove: onApprove,
+                onAlwaysAllow: onAlwaysAllow,
+                onAutoApprove: onAutoApprove,
+                onReject: onReject
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        } else {
+            HStack(spacing: 8) {
+                IconButton(icon: "bubble.left") { onChat() }
+                if session.canFocusTerminal || (session.isInTmux && isYabaiAvailable) {
+                    IconButton(icon: "eye") { onFocus() }
+                }
+                if session.phase == .idle || session.phase == .waitingForInput {
+                    IconButton(icon: "archivebox") { onArchive() }
+                }
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        }
+    }
+}
+
+// MARK: - Badge Pill
+
+struct BadgePill: View {
+    let text: String
+    var dimmed: Bool = false
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundColor(.white.opacity(dimmed ? 0.4 : 0.6))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.white.opacity(dimmed ? 0.05 : 0.08))
+            .clipShape(Capsule())
+    }
 }
 
 // MARK: - Inline Approval Buttons
