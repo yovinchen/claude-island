@@ -128,6 +128,40 @@ struct ToolCompletionResult: Sendable {
 // MARK: - Hook Event Extensions
 
 extension HookEvent {
+    private nonisolated var isGeminiToolPermissionNotification: Bool {
+        source == .gemini &&
+            event == "Notification" &&
+            notificationType?.lowercased() == "toolpermission"
+    }
+
+    private nonisolated func buildPermissionContext() -> PermissionContext? {
+        if isGeminiToolPermissionNotification {
+            let resolvedToolName = tool ?? "ToolPermission"
+            let resolvedToolUseId = toolUseId ?? "gemini-tool-permission-\(sessionId)"
+
+            return PermissionContext(
+                toolUseId: resolvedToolUseId,
+                toolName: resolvedToolName,
+                toolInput: toolInput,
+                receivedAt: Date(),
+                message: message,
+                choices: geminiPermissionChoices(toolName: resolvedToolName, toolInput: toolInput, message: message),
+                interactionMode: .terminalSelection
+            )
+        }
+
+        if expectsResponse, let tool = tool {
+            return PermissionContext(
+                toolUseId: toolUseId ?? "",
+                toolName: tool,
+                toolInput: toolInput,
+                receivedAt: Date()
+            )
+        }
+
+        return nil
+    }
+
     /// Determine the target session phase based on this hook event
     nonisolated func determinePhase() -> SessionPhase {
         // PreCompact takes priority
@@ -136,13 +170,8 @@ extension HookEvent {
         }
 
         // Permission request creates waitingForApproval state
-        if expectsResponse, let tool = tool {
-            return .waitingForApproval(PermissionContext(
-                toolUseId: toolUseId ?? "",
-                toolName: tool,
-                toolInput: toolInput,
-                receivedAt: Date()
-            ))
+        if let permissionContext = buildPermissionContext() {
+            return .waitingForApproval(permissionContext)
         }
 
         if event == "Notification" && notificationType == "idle_prompt" {
@@ -176,6 +205,38 @@ extension HookEvent {
         default:
             return false
         }
+    }
+
+    private nonisolated func geminiPermissionChoices(toolName: String, toolInput: [String: AnyCodable]?, message: String?) -> [PermissionChoice] {
+        let lowerToolName = toolName.lowercased()
+        let lowerMessage = (message ?? "").lowercased()
+        let inputKeys = Set((toolInput ?? [:]).keys.map { $0.lowercased() })
+
+        let isChangePrompt = lowerMessage.contains("apply this change") ||
+            lowerMessage.contains("change") ||
+            lowerToolName.contains("edit") ||
+            lowerToolName.contains("write") ||
+            lowerToolName.contains("replace") ||
+            inputKeys.contains("file_path") ||
+            inputKeys.contains("old_string") ||
+            inputKeys.contains("new_string") ||
+            inputKeys.contains("diff")
+
+        if isChangePrompt {
+            return [
+                PermissionChoice(index: 1, label: "Yes, allow once"),
+                PermissionChoice(index: 2, label: "Yes, allow always"),
+                PermissionChoice(index: 3, label: "Modify with external editor"),
+                PermissionChoice(index: 4, label: "No, suggest changes (esc)"),
+            ]
+        }
+
+        return [
+            PermissionChoice(index: 1, label: "Allow once"),
+            PermissionChoice(index: 2, label: "Allow for this session"),
+            PermissionChoice(index: 3, label: "Modify with external editor"),
+            PermissionChoice(index: 4, label: "No, suggest changes (esc)"),
+        ]
     }
 }
 

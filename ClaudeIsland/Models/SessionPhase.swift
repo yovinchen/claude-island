@@ -8,15 +8,63 @@
 
 import Foundation
 
+enum PermissionInteractionMode: Sendable {
+    case socketApproval
+    case terminalSelection
+}
+
+extension PermissionInteractionMode: Equatable {
+    nonisolated static func == (lhs: PermissionInteractionMode, rhs: PermissionInteractionMode) -> Bool {
+        switch (lhs, rhs) {
+        case (.socketApproval, .socketApproval), (.terminalSelection, .terminalSelection):
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+struct PermissionChoice: Sendable {
+    let index: Int
+    let label: String
+}
+
+extension PermissionChoice: Equatable {
+    nonisolated static func == (lhs: PermissionChoice, rhs: PermissionChoice) -> Bool {
+        lhs.index == rhs.index && lhs.label == rhs.label
+    }
+}
+
 /// Permission context for tools waiting for approval
 struct PermissionContext: Sendable {
     let toolUseId: String
     let toolName: String
     let toolInput: [String: AnyCodable]?
     let receivedAt: Date
+    let message: String?
+    let choices: [PermissionChoice]
+    let interactionMode: PermissionInteractionMode
+
+    nonisolated init(
+        toolUseId: String,
+        toolName: String,
+        toolInput: [String: AnyCodable]?,
+        receivedAt: Date,
+        message: String? = nil,
+        choices: [PermissionChoice] = [],
+        interactionMode: PermissionInteractionMode = .socketApproval
+    ) {
+        self.toolUseId = toolUseId
+        self.toolName = toolName
+        self.toolInput = toolInput
+        self.receivedAt = receivedAt
+        self.message = message
+        self.choices = choices
+        self.interactionMode = interactionMode
+    }
 
     /// Format tool input for display
-    var formattedInput: String? {
+    nonisolated var formattedInput: String? {
         guard let input = toolInput else { return nil }
         var parts: [String] = []
         for (key, value) in input {
@@ -37,6 +85,19 @@ struct PermissionContext: Sendable {
         }
         return parts.joined(separator: "\n")
     }
+
+    nonisolated var isTerminalSelection: Bool {
+        interactionMode == .terminalSelection
+    }
+
+    nonisolated var blocksPhaseTransitions: Bool {
+        interactionMode == .socketApproval
+    }
+
+    nonisolated var choicesSummary: String? {
+        guard !choices.isEmpty else { return nil }
+        return choices.map { "\($0.index). \($0.label)" }.joined(separator: "  ")
+    }
 }
 
 extension PermissionContext: Equatable {
@@ -44,7 +105,8 @@ extension PermissionContext: Equatable {
         // Compare by identity fields only (AnyCodable doesn't conform to Equatable)
         lhs.toolUseId == rhs.toolUseId &&
         lhs.toolName == rhs.toolName &&
-        lhs.receivedAt == rhs.receivedAt
+        lhs.receivedAt == rhs.receivedAt &&
+        lhs.interactionMode == rhs.interactionMode
     }
 }
 
@@ -164,12 +226,16 @@ enum SessionPhase: Sendable {
         return false
     }
 
-    /// Extract tool name if waiting for approval
-    var approvalToolName: String? {
+    var approvalContext: PermissionContext? {
         if case .waitingForApproval(let ctx) = self {
-            return ctx.toolName
+            return ctx
         }
         return nil
+    }
+
+    /// Extract tool name if waiting for approval
+    var approvalToolName: String? {
+        approvalContext?.toolName
     }
 }
 

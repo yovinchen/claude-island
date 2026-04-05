@@ -218,6 +218,9 @@ struct SessionState: Identifiable, Sendable {
     /// Last tool error (from PostToolUseFailure hook event, Qoder-specific)
     var hookError: String?
 
+    /// Last hook-supplied notification message (for sources without transcript parsing)
+    var hookMessage: String?
+
     /// Last assistant message (from Stop hook event)
     var hookLastMessage: String?
 
@@ -277,6 +280,10 @@ struct SessionState: Identifiable, Sendable {
         self.conversationInfo = conversationInfo
         self.needsClearReconciliation = needsClearReconciliation
         self.usageData = usageData
+        self.hookPrompt = nil
+        self.hookError = nil
+        self.hookMessage = nil
+        self.hookLastMessage = nil
         self.lastActivity = lastActivity
         self.createdAt = createdAt
     }
