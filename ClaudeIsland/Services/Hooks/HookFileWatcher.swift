@@ -51,8 +51,9 @@ class HookFileWatcher {
             guard AppSettings.isHookEnabled(for: source) else { continue }
             guard let hookSource = HookInstaller.hookSource(for: source) else { continue }
 
-            let path = hookSource.configPath
-            watchFile(at: path)
+            for path in hookSource.managedConfigPaths {
+                watchFile(at: path)
+            }
         }
     }
 
@@ -65,7 +66,14 @@ class HookFileWatcher {
 
         // Create file if it doesn't exist
         if !FileManager.default.fileExists(atPath: path) {
-            FileManager.default.createFile(atPath: path, contents: "{}".data(using: .utf8))
+            let initialContents: String
+            switch (path as NSString).pathExtension.lowercased() {
+            case "json":
+                initialContents = "{}"
+            default:
+                initialContents = ""
+            }
+            FileManager.default.createFile(atPath: path, contents: initialContents.data(using: .utf8))
         }
 
         let fd = open(path, O_EVTONLY)

@@ -98,7 +98,7 @@ class HookRepairManager: ObservableObject {
             guard AppSettings.isHookEnabled(for: source) else { continue }
             guard let hookSource = HookInstaller.hookSource(for: source) else { continue }
 
-            if hookSource.configPath == path {
+            if hookSource.managedConfigPaths.contains(path) {
                 // Check if our hooks were removed
                 if !hookSource.isInstalled() {
                     // Backup before repair

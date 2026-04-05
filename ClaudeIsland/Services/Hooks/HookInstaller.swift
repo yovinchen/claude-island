@@ -13,10 +13,15 @@ import Foundation
 protocol HookSource {
     var sourceType: SessionSource { get }
     var configPath: String { get }
+    var managedConfigPaths: [String] { get }
     var displayName: String { get }
     func install(bridgePath: String) throws
     func uninstall() throws
     func isInstalled() -> Bool
+}
+
+extension HookSource {
+    var managedConfigPaths: [String] { [configPath] }
 }
 
 // MARK: - Hook Status
@@ -494,6 +499,25 @@ struct ClaudeHookSource: HookSource {
 // MARK: - Codex Hook Source
 
 struct CodexHookSource: HookSource {
+    private struct EventConfig {
+        let name: String
+        let matcher: String?
+
+        init(_ name: String, matcher: String? = nil) {
+            self.name = name
+            self.matcher = matcher
+        }
+    }
+
+    /// Codex's current official hook surface.
+    private static let events: [EventConfig] = [
+        .init("SessionStart", matcher: "startup|resume"),
+        .init("UserPromptSubmit"),
+        .init("PreToolUse", matcher: "Bash"),
+        .init("PostToolUse", matcher: "Bash"),
+        .init("Stop")
+    ]
+
     var sourceType: SessionSource { .codexCLI }
     var displayName: String { "Codex CLI" }
 
@@ -502,23 +526,37 @@ struct CodexHookSource: HookSource {
             .appendingPathComponent(".codex/hooks.json").path
     }
 
-    private var scriptURL: URL {
+    var managedConfigPaths: [String] {
+        [configPath, codexConfigURL.path]
+    }
+
+    private var codexConfigURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/claude-island/codex-island-hook.py")
+            .appendingPathComponent(".codex/config.toml")
+    }
+
+    private var notifyScriptURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/claude-island/codex-notify.py")
+    }
+
+    private var notifyChainURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/claude-island/notify-chain.json")
     }
 
     func install(bridgePath: String) throws {
         let codexDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/claude-island")
-        let binDir = codexDir.appendingPathComponent("bin")
 
         try? FileManager.default.createDirectory(
-            at: binDir,
+            at: codexDir,
             withIntermediateDirectories: true
         )
 
-        writeCodexHookScript(at: scriptURL)
-        updateCodexHooks(at: URL(fileURLWithPath: configPath), scriptURL: scriptURL)
+        writeCodexNotifyScript(at: notifyScriptURL)
+        updateCodexHooks(at: URL(fileURLWithPath: configPath), bridgePath: bridgePath)
+        updateCodexConfig(at: codexConfigURL)
     }
 
     func uninstall() throws {
@@ -527,7 +565,7 @@ struct CodexHookSource: HookSource {
         if let data = try? Data(contentsOf: hooksURL),
            var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            var hooks = json["hooks"] as? [String: Any] {
-            removeManagedHooks(from: &hooks, scriptPath: scriptURL.path)
+            removeManagedHooks(from: &hooks)
 
             if hooks.isEmpty {
                 json.removeValue(forKey: "hooks")
@@ -543,90 +581,75 @@ struct CodexHookSource: HookSource {
             }
         }
 
-        try? FileManager.default.removeItem(at: scriptURL)
+        restoreCodexConfig(at: codexConfigURL)
+
+        try? FileManager.default.removeItem(at: notifyScriptURL)
+        try? FileManager.default.removeItem(at: notifyChainURL)
     }
 
     func isInstalled() -> Bool {
         let hooksURL = URL(fileURLWithPath: configPath)
         guard FileManager.default.fileExists(atPath: hooksURL.path),
-              FileManager.default.fileExists(atPath: scriptURL.path),
+              FileManager.default.fileExists(atPath: notifyScriptURL.path),
               let data = try? Data(contentsOf: hooksURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let hooks = json["hooks"] as? [String: Any] else {
             return false
         }
 
-        return containsManagedHook(in: hooks, scriptPath: scriptURL.path)
+        guard containsManagedHook(in: hooks) else { return false }
+
+        let configContent = (try? String(contentsOf: codexConfigURL, encoding: .utf8)) ?? ""
+        guard parseBool(inSection: "features", key: "codex_hooks", from: configContent) == true else {
+            return false
+        }
+
+        guard let notify = extractTopLevelArray(for: "notify", from: configContent) else {
+            return false
+        }
+
+        return isManagedNotifyCommand(notify)
     }
 
-    private func writeCodexHookScript(at url: URL) {
+    private func writeCodexNotifyScript(at url: URL) {
+        let launcherPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin/claude-island-bridge-launcher.sh").path
+        let chainPath = notifyChainURL.path
+
         let script = """
         #!/usr/bin/env python3
-        import json, os, socket, sys
+        import json, subprocess, sys
+        from pathlib import Path
 
-        SOCKET_PATH = os.environ.get("CLAUDE_ISLAND_SOCKET_PATH", "/tmp/claude-island.sock")
+        BRIDGE = Path(r"\(launcherPath)")
+        CHAIN = Path(r"\(chainPath)")
 
-        def first_string(*values):
-            for v in values:
-                if isinstance(v, str) and v: return v
-            return None
+        payload = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read()
+        if not payload:
+            sys.exit(0)
 
-        def nested(obj, *keys):
-            c = obj
-            for k in keys:
-                if not isinstance(c, dict): return None
-                c = c.get(k)
-            return c
+        try:
+            subprocess.run(
+                [str(BRIDGE), "--source", "codex_notify"],
+                input=payload.encode(),
+                check=False,
+            )
+        except Exception:
+            pass
 
-        def normalize(name):
-            v = (name or "").strip()
-            if not v: return "unknown"
-            a = {"sessionstart":"SessionStart","sessionend":"SessionEnd","userpromptsubmitted":"UserPromptSubmit",
-                 "pretooluse":"PreToolUse","posttooluse":"PostToolUse","permissionrequest":"PermissionRequest",
-                 "agentstop":"Stop","subagentstop":"SubagentStop","notification":"Notification",
-                 "precompact":"PreCompact","erroroccurred":"Notification"}
-            return a.get(v.replace("_","").replace("-","").lower(), v)
-
-        def infer_status(n):
-            m = {"PreToolUse":"running_tool","PostToolUse":"processing","UserPromptSubmit":"processing",
-                 "PermissionRequest":"waiting_for_approval","SessionStart":"waiting_for_input",
-                 "Stop":"waiting_for_input","SubagentStop":"waiting_for_input",
-                 "SessionEnd":"ended","PreCompact":"compacting"}
-            return m.get(n, "unknown")
-
-        def build(data):
-            ev = normalize(first_string(data.get("hook_event_name"),data.get("hookEventName"),data.get("event"),data.get("type")))
-            sid = first_string(data.get("session_id"),data.get("sessionId"),nested(data,"session","id"),data.get("id")) or "unknown"
-            cwd = first_string(data.get("cwd"),nested(data,"session","cwd"),data.get("workingDirectory")) or ""
-            p = {"session_id":sid,"source":"codex_cli","cwd":cwd,"event":ev,"status":infer_status(ev),"approval_channel":"none"}
-            ti = data.get("tool_input") or data.get("toolInput") or (data.get("tool",{}).get("input") if isinstance(data.get("tool"),dict) else None)
-            tn = first_string(data.get("tool_name"),data.get("toolName"),nested(data,"tool","name"),data.get("tool") if isinstance(data.get("tool"),str) else None)
-            tuid = first_string(data.get("tool_use_id"),data.get("toolUseId"),nested(data,"tool","id"))
-            pid = data.get("pid") or nested(data,"session","pid")
-            tty = first_string(data.get("tty"),nested(data,"session","tty"))
-            if pid: p["pid"]=pid
-            if tty: p["tty"]=tty
-            if tn: p["tool"]=tn
-            if ti: p["tool_input"]=ti
-            if tuid: p["tool_use_id"]=tuid
-            if p["status"]=="waiting_for_approval": p["approval_channel"]="socket"
-            return p
-
-        def send(payload):
+        if CHAIN.exists():
             try:
-                s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(5)
-                s.connect(SOCKET_PATH);s.sendall(json.dumps(payload).encode());s.close()
-            except: pass
-
-        try: data=json.load(sys.stdin)
-        except: sys.exit(0)
-        if isinstance(data,dict): send(build(data))
+                command = json.loads(CHAIN.read_text(encoding="utf-8"))
+                if isinstance(command, list) and command:
+                    subprocess.run(command + [payload], check=False)
+            except Exception:
+                pass
         """
         try? script.write(to: url, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 
-    private func updateCodexHooks(at hooksURL: URL, scriptURL: URL) {
+    private func updateCodexHooks(at hooksURL: URL, bridgePath: String) {
         var json: [String: Any] = [:]
         if let data = try? Data(contentsOf: hooksURL),
            let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -634,29 +657,22 @@ struct CodexHookSource: HookSource {
         }
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
-        let command = scriptURL.path
-        let env: [String: String] = ["CLAUDE_ISLAND_SOURCE": "codex_cli", "CLAUDE_ISLAND_SOCKET_PATH": "/tmp/claude-island.sock"]
-        let commonHook: [String: Any] = [
-            "type": "command", "bash": command, "timeoutSec": 30, "env": env
-        ]
-        let permissionHook: [String: Any] = [
-            "type": "command", "bash": command, "timeoutSec": 86400, "env": env
-        ]
+        removeManagedHooks(from: &hooks)
 
-        let events = ["sessionStart", "sessionEnd", "userPromptSubmitted", "preToolUse",
-                       "postToolUse", "permissionRequest", "agentStop", "subagentStop",
-                       "preCompact", "errorOccurred"]
+        let command = "\(bridgePath) --source codex"
+        let hookCommand: [String: Any] = ["type": "command", "command": command]
 
-        for event in events {
-            let hook = event == "permissionRequest" ? permissionHook : commonHook
-            if var existing = hooks[event] as? [[String: Any]] {
-                let hasOur = existing.contains { ($0["bash"] as? String) == command }
-                if !hasOur {
-                    existing.append(hook)
-                    hooks[event] = existing
-                }
+        for event in Self.events {
+            var entry: [String: Any] = ["hooks": [hookCommand]]
+            if let matcher = event.matcher {
+                entry["matcher"] = matcher
+            }
+
+            if var existingEntries = hooks[event.name] as? [[String: Any]] {
+                existingEntries.append(entry)
+                hooks[event.name] = existingEntries
             } else {
-                hooks[event] = [hook]
+                hooks[event.name] = [entry]
             }
         }
 
@@ -668,25 +684,58 @@ struct CodexHookSource: HookSource {
         }
     }
 
-    private func containsManagedHook(in hooks: [String: Any], scriptPath: String) -> Bool {
-        for (_, value) in hooks {
-            if let entries = value as? [[String: Any]] {
-                for entry in entries {
-                    if (entry["bash"] as? String) == scriptPath || (entry["command"] as? String) == scriptPath {
-                        return true
-                    }
-                }
+    private func updateCodexConfig(at configURL: URL) {
+        let current = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        let existingNotify = extractTopLevelArray(for: "notify", from: current)
+
+        if let existingNotify, !existingNotify.isEmpty, !isManagedNotifyCommand(existingNotify) {
+            if let data = try? JSONSerialization.data(withJSONObject: existingNotify, options: [.prettyPrinted]) {
+                try? data.write(to: notifyChainURL)
             }
+        } else if existingNotify == nil || existingNotify?.isEmpty == true {
+            try? FileManager.default.removeItem(at: notifyChainURL)
         }
-        return false
+
+        var updated = setBool(inSection: "features", key: "codex_hooks", value: true, in: current)
+        updated = setTopLevelArray(for: "notify", values: [notifyScriptURL.path], in: updated)
+
+        if !updated.hasSuffix("\n") {
+            updated.append("\n")
+        }
+
+        try? updated.write(to: configURL, atomically: true, encoding: .utf8)
     }
 
-    private func removeManagedHooks(from hooks: inout [String: Any], scriptPath: String) {
+    private func restoreCodexConfig(at configURL: URL) {
+        guard var current = try? String(contentsOf: configURL, encoding: .utf8) else { return }
+
+        if let notify = extractTopLevelArray(for: "notify", from: current), isManagedNotifyCommand(notify) {
+            if let data = try? Data(contentsOf: notifyChainURL),
+               let previous = try? JSONSerialization.jsonObject(with: data) as? [String],
+               !previous.isEmpty {
+                current = setTopLevelArray(for: "notify", values: previous, in: current)
+            } else {
+                current = removeTopLevelValue(for: "notify", in: current)
+            }
+
+            if !current.hasSuffix("\n") {
+                current.append("\n")
+            }
+            try? current.write(to: configURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func containsManagedHook(in hooks: [String: Any]) -> Bool {
+        hooks.values.contains { value in
+            guard let entries = value as? [[String: Any]] else { return false }
+            return entries.contains(where: Self.isManagedHookEntry)
+        }
+    }
+
+    private func removeManagedHooks(from hooks: inout [String: Any]) {
         for (event, value) in hooks {
             if var entries = value as? [[String: Any]] {
-                entries.removeAll { entry in
-                    (entry["bash"] as? String) == scriptPath || (entry["command"] as? String) == scriptPath
-                }
+                entries.removeAll(where: Self.isManagedHookEntry)
                 if entries.isEmpty {
                     hooks.removeValue(forKey: event)
                 } else {
@@ -695,11 +744,262 @@ struct CodexHookSource: HookSource {
             }
         }
     }
+
+    nonisolated private static func isManagedHookEntry(_ entry: [String: Any]) -> Bool {
+        if let command = entry["command"] as? String {
+            return command.contains("claude-island") && command.contains("--source codex")
+        }
+
+        if let hooks = entry["hooks"] as? [[String: Any]] {
+            return hooks.contains {
+                (($0["command"] as? String)?.contains("claude-island") == true) &&
+                (($0["command"] as? String)?.contains("--source codex") == true)
+            }
+        }
+
+        return false
+    }
+
+    private func isManagedNotifyCommand(_ command: [String]) -> Bool {
+        command.first == notifyScriptURL.path
+    }
+
+    private func extractTopLevelArray(for key: String, from content: String) -> [String]? {
+        let lines = content.components(separatedBy: .newlines)
+        var startLine: Int?
+        var collected: [String] = []
+        var bracketBalance = 0
+        var currentTable: String?
+
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                currentTable = String(trimmed.dropFirst().dropLast())
+            }
+
+            if startLine == nil,
+               currentTable == nil,
+               hasKeyAssignment(trimmed, key: key) {
+                startLine = index
+            }
+
+            if let startLine, index >= startLine {
+                collected.append(line)
+                bracketBalance += line.filter { $0 == "[" }.count
+                bracketBalance -= line.filter { $0 == "]" }.count
+                if bracketBalance <= 0 {
+                    break
+                }
+            }
+        }
+
+        guard !collected.isEmpty else { return nil }
+
+        let arrayText = collected.joined(separator: "\n")
+        guard let start = arrayText.firstIndex(of: "["),
+              let end = arrayText.lastIndex(of: "]"),
+              start < end else {
+            return nil
+        }
+
+        let inner = arrayText[arrayText.index(after: start)..<end]
+        let pattern = #""((?:\\.|[^"])*)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let nsRange = NSRange(inner.startIndex..<inner.endIndex, in: inner)
+
+        return regex.matches(in: String(inner), options: [], range: nsRange).compactMap { match in
+            guard match.numberOfRanges > 1,
+                  let range = Range(match.range(at: 1), in: inner) else {
+                return nil
+            }
+
+            let raw = String(inner[range])
+            let json = "\"\(raw)\""
+            if let data = json.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(String.self, from: data) {
+                return decoded
+            }
+            return raw
+        }
+    }
+
+    private func setTopLevelArray(for key: String, values: [String], in content: String) -> String {
+        let replacement = "\(key) = [\(values.map(tomlString).joined(separator: ", "))]"
+        return replaceTopLevelValue(for: key, replacement: replacement, in: content)
+    }
+
+    private func removeTopLevelValue(for key: String, in content: String) -> String {
+        replaceTopLevelValue(for: key, replacement: nil, in: content)
+    }
+
+    private func replaceTopLevelValue(for key: String, replacement: String?, in content: String) -> String {
+        let lines = content.components(separatedBy: .newlines)
+        var startIndex: Int?
+        var endIndex: Int?
+        var bracketBalance = 0
+        var currentTable: String?
+
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                currentTable = String(trimmed.dropFirst().dropLast())
+            }
+
+            if startIndex == nil,
+               currentTable == nil,
+               hasKeyAssignment(trimmed, key: key) {
+                startIndex = index
+                bracketBalance += line.filter { $0 == "[" }.count
+                bracketBalance -= line.filter { $0 == "]" }.count
+                if bracketBalance <= 0 {
+                    endIndex = index
+                    break
+                }
+                continue
+            }
+
+            if let startIndex, index > startIndex {
+                bracketBalance += line.filter { $0 == "[" }.count
+                bracketBalance -= line.filter { $0 == "]" }.count
+                if bracketBalance <= 0 {
+                    endIndex = index
+                    break
+                }
+            }
+        }
+
+        var outputLines = lines
+        if let startIndex, let endIndex {
+            let replacementLines = replacement.map { [$0] } ?? []
+            outputLines.replaceSubrange(startIndex...endIndex, with: replacementLines)
+            return outputLines.joined(separator: "\n")
+        }
+
+        guard let replacement else { return content }
+
+        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return replacement
+        }
+
+        if let firstTableIndex = lines.firstIndex(where: {
+            let trimmed = $0.trimmingCharacters(in: .whitespaces)
+            return trimmed.hasPrefix("[") && trimmed.hasSuffix("]")
+        }) {
+            outputLines.insert("", at: firstTableIndex)
+            outputLines.insert(replacement, at: firstTableIndex)
+        } else {
+            outputLines.append(replacement)
+        }
+
+        return outputLines.joined(separator: "\n")
+    }
+
+    private func parseBool(inSection section: String, key: String, from content: String) -> Bool? {
+        let lines = content.components(separatedBy: .newlines)
+        var currentSection: String?
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                currentSection = String(trimmed.dropFirst().dropLast())
+                continue
+            }
+
+            guard currentSection == section,
+                  hasKeyAssignment(trimmed, key: key),
+                  let rawValue = trimmed.split(separator: "=", maxSplits: 1).last else {
+                continue
+            }
+
+            return rawValue.trimmingCharacters(in: .whitespaces).lowercased() == "true"
+        }
+
+        return nil
+    }
+
+    private func setBool(inSection section: String, key: String, value: Bool, in content: String) -> String {
+        let lines = content.components(separatedBy: .newlines)
+        var output = lines
+        var sectionIndex: Int?
+        var insertIndex: Int?
+
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed == "[\(section)]" {
+                sectionIndex = index
+                insertIndex = index + 1
+                continue
+            }
+
+            if let sectionIndex, index > sectionIndex,
+               trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                insertIndex = index
+                break
+            }
+
+            if let sectionIndex, index > sectionIndex,
+               hasKeyAssignment(trimmed, key: key) {
+                output[index] = "\(key) = \(value ? "true" : "false")"
+                return output.joined(separator: "\n")
+            }
+        }
+
+        if let insertIndex {
+            output.insert("\(key) = \(value ? "true" : "false")", at: insertIndex)
+            return output.joined(separator: "\n")
+        }
+
+        var result = content
+        if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !result.hasSuffix("\n") {
+            result.append("\n")
+        }
+        if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append("\n")
+        }
+        result.append("[\(section)]\n\(key) = \(value ? "true" : "false")")
+        return result
+    }
+
+    private func tomlString(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
+    private func hasKeyAssignment(_ trimmedLine: String, key: String) -> Bool {
+        trimmedLine.hasPrefix("\(key) ") || trimmedLine.hasPrefix("\(key)=")
+    }
 }
 
 // MARK: - Gemini Hook Source
 
 struct GeminiHookSource: HookSource {
+    private struct EventConfig {
+        let name: String
+        let matcher: String?
+
+        init(_ name: String, matcher: String? = nil) {
+            self.name = name
+            self.matcher = matcher
+        }
+    }
+
+    /// Gemini's native hook events. These must match the official Gemini CLI docs.
+    private static let events: [EventConfig] = [
+        .init("SessionStart"),
+        .init("BeforeAgent"),
+        .init("BeforeTool", matcher: "*"),
+        .init("AfterTool", matcher: "*"),
+        .init("AfterAgent"),
+        .init("Notification"),
+        .init("PreCompress"),
+        .init("SessionEnd"),
+    ]
+
     var sourceType: SessionSource { .gemini }
     var displayName: String { "Gemini CLI" }
 
@@ -722,21 +1022,23 @@ struct GeminiHookSource: HookSource {
         }
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
+        removeClaudeIslandHooks(from: &hooks)
+
         let command = "\(bridgePath) --source gemini"
-        let hookEntry: [String: Any] = ["type": "command", "command": command]
 
-        let events = ["sessionStart", "sessionEnd", "preToolUse", "postToolUse",
-                       "stop", "notification"]
+        for event in Self.events {
+            let hookCommand: [String: Any] = ["type": "command", "command": command]
 
-        for event in events {
-            if var existing = hooks[event] as? [[String: Any]] {
-                let hasOur = existing.contains { ($0["command"] as? String)?.contains("claude-island") == true }
-                if !hasOur {
-                    existing.append(hookEntry)
-                    hooks[event] = existing
-                }
+            var entry: [String: Any] = ["hooks": [hookCommand]]
+            if let matcher = event.matcher {
+                entry["matcher"] = matcher
+            }
+
+            if var existingEntries = hooks[event.name] as? [[String: Any]] {
+                existingEntries.append(entry)
+                hooks[event.name] = existingEntries
             } else {
-                hooks[event] = [hookEntry]
+                hooks[event.name] = [entry]
             }
         }
 
@@ -769,7 +1071,7 @@ struct GeminiHookSource: HookSource {
 
         return hooks.values.contains { value in
             if let entries = value as? [[String: Any]] {
-                return entries.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+                return entries.contains(where: Self.isClaudeIslandHookEntry)
             }
             return false
         }
@@ -778,10 +1080,22 @@ struct GeminiHookSource: HookSource {
     private func removeClaudeIslandHooks(from hooks: inout [String: Any]) {
         for (event, value) in hooks {
             if var entries = value as? [[String: Any]] {
-                entries.removeAll { ($0["command"] as? String)?.contains("claude-island") == true }
+                entries.removeAll(where: Self.isClaudeIslandHookEntry)
                 if entries.isEmpty { hooks.removeValue(forKey: event) } else { hooks[event] = entries }
             }
         }
+    }
+
+    nonisolated private static func isClaudeIslandHookEntry(_ entry: [String: Any]) -> Bool {
+        if let command = entry["command"] as? String {
+            return command.contains("claude-island")
+        }
+
+        if let hooks = entry["hooks"] as? [[String: Any]] {
+            return hooks.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+        }
+
+        return false
     }
 }
 
