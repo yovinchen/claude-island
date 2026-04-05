@@ -253,6 +253,8 @@ enum EventMapper {
             "pretooluse": "PreToolUse",
             "posttooluse": "PostToolUse",
             "permissionrequest": "PermissionRequest",
+            "elicitation": "Notification",
+            "elicitationresult": "Notification",
             "agentstop": "Stop",
             "setup": "Setup",
             "stop": "Stop",

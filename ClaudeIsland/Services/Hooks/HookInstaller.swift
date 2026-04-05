@@ -500,6 +500,8 @@ struct ClaudeHookSource: HookSource {
             ("PreToolUse", withMatcher),
             ("PostToolUse", withMatcher),
             ("PermissionRequest", withMatcherAndTimeout),
+            ("Elicitation", withoutMatcher),
+            ("ElicitationResult", withoutMatcher),
             ("Notification", withMatcher),
             ("Stop", withoutMatcher),
             ("SubagentStop", withoutMatcher),
