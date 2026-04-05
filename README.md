@@ -234,6 +234,98 @@ Claude Island App (NotchView)
 | 终端标题 (Ghostty) | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 |
 | 终端跳转 | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 |
 | macOS 系统通知 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🚫 |
+### 各 CLI Hook 调用方式详解
+
+#### Claude Code ✅ 完整支持
+
+- **官方文档**: [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks)
+- **配置文件**: `~/.claude/settings.json`
+- **格式**: JSON，`hooks` 对象下按事件名分组，每个事件包含 `matcher`、`hooks` 数组
+- **支持事件**: UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Stop, SubagentStop, SessionStart, SessionEnd, Notification, PreCompact
+- **权限响应**: 支持 `hookSpecificOutput` 格式，包含 `updatedPermissions`（`setMode`/`addRules`）
+- **特色**: 86400s 超时、StatusLine 集成、`matcher` 通配符、PreCompact auto/manual 两种模式
+
+#### Codex CLI ✅ 完整支持
+
+- **配置文件**: `~/.codex/hooks.json`
+- **格式**: Python 脚本注入，通过 `bash` 类型执行
+- **支持事件**: 与 Claude Code 相同的 10 个事件
+- **权限响应**: 通用 JSON 格式 `{"decision": "allow"}`
+
+#### Codex Desktop ✅ 文件监听
+
+- **无需 Hook 配置**: 通过监听 `~/.codex/session_index.jsonl` 文件变化检测会话状态
+- **自动生成**: SessionStart/SessionEnd 事件
+
+#### Gemini CLI ✅ 支持
+
+- **官方文档**: [geminicli.com/docs/hooks](https://geminicli.com/docs/hooks/)
+- **配置文件**: `~/.gemini/settings.json`
+- **格式**: JSON，与 Claude Code 格式基本一致（`hooks` → 事件名 → `matcher` + `hooks` 数组）
+- **原生事件名**: BeforeTool, AfterTool, SessionStart, SessionEnd, Notification, PreCompress, BeforeAgent, AfterAgent, BeforeModel, AfterModel
+- **Claude Island 映射**: `sessionStart` → SessionStart, `preToolUse` → BeforeTool, `postToolUse` → AfterTool, `stop` → SessionEnd, `notification` → Notification
+- **注意**: Gemini CLI 不支持 PermissionRequest 事件，权限审批无法通过 Notch 进行
+
+#### Cursor ✅ 支持
+
+- **官方文档**: [cursor.com/docs/hooks](https://cursor.com/docs/hooks)
+- **配置文件**: `~/.cursor/hooks.json`（用户级）或 `.cursor/hooks.json`（项目级）
+- **格式**: JSON，`hooks` 对象下按事件名分组
+- **原生事件名**: beforeShellExecution, beforeMCPExecution, beforeReadFile, afterFileEdit, stop, beforeSubmitPrompt
+- **Claude Island 映射**: `sessionStart`, `sessionEnd`, `preToolUse`, `postToolUse`, `agentStop`
+- **注意**: Cursor hooks 是 beta 功能；不支持 PermissionRequest
+
+#### OpenCode ✅ 支持
+
+- **官方文档**: [opencode.ai/docs/plugins](https://opencode.ai/docs/plugins/)
+- **配置文件**: `~/.config/opencode/plugins/claude-island.js`
+- **格式**: JS 插件模块，导出 `hooks` 对象
+- **原生事件名**: onSessionStart, onSessionEnd, onToolStart, onToolEnd, onStop, tool.execute.before, tool.execute.after, chat.message, event
+- **Claude Island 映射**: 通过 JS 插件的 `onSessionStart`/`onSessionEnd`/`onToolStart`/`onToolEnd`/`onStop` 回调
+- **注意**: 5s 超时，不支持 PermissionRequest
+
+#### Copilot CLI ✅ 支持
+
+- **官方文档**: [docs.github.com/en/copilot/reference/hooks-configuration](https://docs.github.com/en/copilot/reference/hooks-configuration)
+- **配置文件**: `~/.copilot/config.json`（用户级）或 `.github/hooks/hooks.json`（项目级）
+- **格式**: JSON，`hooks` 对象下按事件名分组
+- **原生事件名**: sessionStart, sessionEnd, userPromptSubmitted, preToolUse, stop
+- **Claude Island 映射**: `sessionStart`, `sessionEnd`, `toolUse`, `stop`（4 个事件）
+- **注意**: Copilot 支持 preToolUse 但当前只注册了 `toolUse`（合并 pre/post）；不支持 PermissionRequest
+
+#### Droid (Factory) ✅ 支持
+
+- **官方文档**: [docs.factory.ai/cli/configuration/hooks-guide](https://docs.factory.ai/cli/configuration/hooks-guide)
+- **配置文件**: `~/.factory/settings.json`（注意：实际路径是 `.factory` 而非 `.droid`）
+- **格式**: JSON，与 Claude Code 格式兼容（`hooks` → 事件名 → `matcher` + 命令）
+- **原生事件名**: PreToolUse, PostToolUse, SessionEnd, UserPromptSubmit, Notification, Stop, SubagentStop
+- **Claude Island 映射**: `sessionStart`, `sessionEnd`, `preToolUse`, `postToolUse`, `stop`, `notification`
+- **注意**: Droid 支持 `exit code 2` 阻塞模式，可通过 hook 返回值阻止工具执行
+
+#### Qoder 🔍 待验证
+
+- **官方文档**: [docs.qoder.com](https://docs.qoder.com/)
+- **配置文件**: `~/.qoder/settings.json`（假设）
+- **状态**: Qoder CLI 由阿里巴巴开发，官方文档未明确提及 hooks API。当前使用 GenericSettingsHookSource 写入 Claude Code 格式配置
+- **扩展方式**: Qoder 主要通过 MCP（Model Context Protocol）进行扩展
+- **风险**: 配置写入可能不被 Qoder 识别，实际效果待验证
+
+#### CodeBuddy ✅ 支持
+
+- **官方文档**: [codebuddy.ai/docs/cli/settings](https://www.codebuddy.ai/docs/cli/settings)
+- **配置文件**: `~/.codebuddy/settings.json`
+- **格式**: JSON，与 Claude Code 格式兼容
+- **原生事件名**: PreToolUse, PostToolUse, UserPromptSubmit, Notification, Stop, SubagentStop, SessionStart, SessionEnd, PreCompact
+- **Claude Island 映射**: `sessionStart`, `sessionEnd`, `preToolUse`, `postToolUse`, `stop`, `notification`
+- **注意**: CodeBuddy 是腾讯云出品，hooks 格式与 Claude Code 高度兼容
+
+#### Trae 🚫 暂不支持
+
+- **Trae IDE**: 使用 `.rules` 文件（Markdown + YAML front matter），不支持 JSON hooks
+- **Trae Agent**: 使用 `trae_config.yaml`（YAML 格式），不支持 JSON hooks
+- **扩展方式**: MCP 协议、`.rules` 规则文件
+- **状态**: 已在软件中屏蔽，待官方提供 Hooks API 后适配
+
 ### Hook 事件
 
 应用通过 Hook 监听以下事件：
