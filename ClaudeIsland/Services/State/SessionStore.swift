@@ -124,6 +124,10 @@ actor SessionStore {
         // Track new session in Mixpanel
         if isNewSession {
             Mixpanel.mainInstance().track(event: "Session Started")
+            if let diagnostic = projectConfigDiagnosticMessage(for: event.source, cwd: event.cwd),
+               session.hookMessage == nil {
+                session.hookMessage = diagnostic
+            }
         }
 
         session.pid = event.pid
@@ -239,6 +243,21 @@ actor SessionStore {
             approvalChannel: event.resolvedApprovalChannel,
             phase: .idle
         )
+    }
+
+    private func projectConfigDiagnosticMessage(for source: SessionSource, cwd: String) -> String? {
+        switch source {
+        case .gemini:
+            let path = URL(fileURLWithPath: cwd)
+                .appendingPathComponent(".gemini/settings.json")
+                .path
+            if FileManager.default.fileExists(atPath: path) {
+                return "Project Gemini config detected at .gemini/settings.json; it may override your user-level hooks."
+            }
+            return nil
+        default:
+            return nil
+        }
     }
 
     private func processToolTracking(event: HookEvent, session: inout SessionState) async {

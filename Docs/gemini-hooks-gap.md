@@ -11,7 +11,7 @@
 | `GeminiHookSource` | ✅ | 已支持写入 Gemini hooks 配置 |
 | 事件归一化 | ✅ | `BeforeAgent` / `BeforeTool` / `AfterTool` / `AfterAgent` 等已映射 |
 | `PermissionRequest` | ❌ | 官方本身无独立 PermissionRequest |
-| 项目级配置诊断 | ⚠️ | 设计文档已指出项目级 `.gemini/settings.json` 仍可能覆盖用户级配置 |
+| 项目级配置诊断 | ✅ | 新 Gemini 会话会提示工作区 `.gemini/settings.json` 可能覆盖用户级 hooks |
 
 ## 已知剩余 gap
 
@@ -33,7 +33,7 @@ Gemini CLI **当前属于已支持对象**，但仍有 Gemini 专属事件与项
 
 **最小实现方案**
 1. 继续补 `BeforeModel` / `AfterModel` / `BeforeToolSelection` 的映射与字段提取。
-2. 把项目级 `.gemini/settings.json` 纳入诊断或 `managedConfigPaths`。
+2. 后续如有必要，再评估把项目级 `.gemini/settings.json` 纳入更深层的诊断或受管路径。
 3. 保持 Gemini 为“无独立 PermissionRequest”的模型，不要勉强对齐 Claude。
 
 **主要阻塞**
