@@ -9,7 +9,7 @@
 //    claude-island-bridge --source claude   # Claude Code hook
 //    claude-island-bridge --source codex    # Codex CLI hook
 //    claude-island-bridge --source gemini   # Gemini CLI hook
-//    claude-island-bridge --source cursor   # Cursor hook
+//    claude-island-bridge --source cursor --event beforeShellExecution  # Cursor hook
 //    claude-island-bridge --source copilot  # Copilot hook
 //
 
@@ -27,9 +27,21 @@ func parseSource() -> String {
     return "claude"
 }
 
+/// Parse --event argument (used by Cursor hooks which don't include event name in stdin)
+func parseEvent() -> String? {
+    let args = CommandLine.arguments
+    for i in 0..<args.count {
+        if args[i] == "--event", i + 1 < args.count {
+            return args[i + 1]
+        }
+    }
+    return nil
+}
+
 // MARK: - Main
 
 let source = parseSource()
+let eventOverride = parseEvent()
 let ttyPath = TTYDetector.detectTTY()
 let ppid = ProcessInfo.processInfo.processIdentifier
 
@@ -39,8 +51,13 @@ guard let inputData = try? FileHandle.standardInput.availableData,
     exit(0)
 }
 
-guard let inputJSON = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any] else {
+guard var inputJSON = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any] else {
     exit(0)
+}
+
+// Inject event name from --event arg (used by Cursor hooks which don't include event name in stdin)
+if let eventOverride = eventOverride, inputJSON["hook_event_name"] == nil && inputJSON["event"] == nil {
+    inputJSON["hook_event_name"] = eventOverride
 }
 
 // Map the event to unified protocol

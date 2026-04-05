@@ -787,6 +787,11 @@ struct GeminiHookSource: HookSource {
 
 // MARK: - Cursor Hook Source
 
+/// Cursor hook source
+/// Config: ~/.cursor/hooks.json
+/// Format: {"version": 1, "hooks": {"eventName": [{"command": "..."}]}}
+/// Events: beforeSubmitPrompt, beforeShellExecution, beforeMCPExecution, beforeReadFile, afterFileEdit, stop
+/// Docs: https://cursor.com/docs/hooks
 struct CursorHookSource: HookSource {
     var sourceType: SessionSource { .cursor }
     var displayName: String { "Cursor" }
@@ -795,6 +800,16 @@ struct CursorHookSource: HookSource {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".cursor/hooks.json").path
     }
+
+    /// Cursor hook events and their timeout settings
+    private static let events: [(name: String, timeout: Int?)] = [
+        ("beforeSubmitPrompt", nil),
+        ("beforeShellExecution", 30),
+        ("beforeMCPExecution", 30),
+        ("beforeReadFile", nil),
+        ("afterFileEdit", nil),
+        ("stop", nil),
+    ]
 
     func install(bridgePath: String) throws {
         let configURL = URL(fileURLWithPath: configPath)
@@ -809,21 +824,25 @@ struct CursorHookSource: HookSource {
             json = existing
         }
 
+        json["version"] = 1
+
         var hooks = json["hooks"] as? [String: Any] ?? [:]
-        let command = "\(bridgePath) --source cursor"
-        let hookEntry: [String: Any] = ["type": "command", "command": command, "timeoutSec": 30]
 
-        let events = ["sessionStart", "sessionEnd", "preToolUse", "postToolUse", "agentStop"]
+        for event in Self.events {
+            let command = "\(bridgePath) --source cursor --event \(event.name)"
+            var hookEntry: [String: Any] = ["command": command]
+            if let timeout = event.timeout {
+                hookEntry["timeout"] = timeout
+            }
 
-        for event in events {
-            if var existing = hooks[event] as? [[String: Any]] {
+            if var existing = hooks[event.name] as? [[String: Any]] {
                 let hasOur = existing.contains { ($0["command"] as? String)?.contains("claude-island") == true }
                 if !hasOur {
                     existing.append(hookEntry)
-                    hooks[event] = existing
+                    hooks[event.name] = existing
                 }
             } else {
-                hooks[event] = [hookEntry]
+                hooks[event.name] = [hookEntry]
             }
         }
 

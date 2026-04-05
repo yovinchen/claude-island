@@ -571,10 +571,32 @@ class HookSocketServer {
     private func buildResponseData(decision: String, reason: String?, alwaysAllow: Bool, allowAll: Bool, autoApprove: Bool, toolName: String?, source: SessionSource) -> Data? {
         if Self.hookSpecificOutputSources.contains(source) {
             return buildHookSpecificOutputResponse(decision: decision, reason: reason, alwaysAllow: alwaysAllow, allowAll: allowAll, autoApprove: autoApprove, toolName: toolName)
+        } else if source == .cursor {
+            return buildCursorResponse(decision: decision, alwaysAllow: alwaysAllow)
         } else {
             let response = HookResponse(decision: decision, reason: reason)
             return try? JSONEncoder().encode(response)
         }
+    }
+
+    /// Build Cursor-specific permission response format
+    /// Cursor expects: {"continue": true/false, "permission": "allow|deny|ask"}
+    /// - Allow Once: {"continue": true}
+    /// - Always Allow: {"continue": true, "permission": "allow"}
+    /// - Deny: {"continue": false}
+    private func buildCursorResponse(decision: String, alwaysAllow: Bool) -> Data? {
+        var response: [String: Any] = [:]
+
+        if decision == "allow" {
+            response["continue"] = true
+            if alwaysAllow {
+                response["permission"] = "allow"
+            }
+        } else {
+            response["continue"] = false
+        }
+
+        return try? JSONSerialization.data(withJSONObject: response, options: [])
     }
 
     /// Build hookSpecificOutput format for Claude Code-compatible CLIs

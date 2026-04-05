@@ -39,12 +39,18 @@ enum EventMapper {
             payload["pid"] = getppid()
         }
 
-        // Tool info
-        if let toolName = extractToolName(from: input) {
+        // Cursor-specific: infer tool name and input from event-specific fields
+        if source == "cursor" {
+            applyCursorFields(input: input, eventName: eventName, payload: &payload)
+        }
+
+        // Tool info (generic extraction, won't overwrite Cursor-set fields)
+        if payload["tool"] == nil, let toolName = extractToolName(from: input) {
             payload["tool"] = toolName
         }
 
-        if let toolInput = input["tool_input"] ?? input["toolInput"] ?? nested(input, "tool", "input") {
+        if payload["tool_input"] == nil,
+           let toolInput = input["tool_input"] ?? input["toolInput"] ?? nested(input, "tool", "input") {
             payload["tool_input"] = toolInput
         }
 
@@ -105,17 +111,27 @@ enum EventMapper {
             input["session_id"],
             input["sessionId"],
             nested(input, "session", "id"),
+            input["conversation_id"],   // Cursor: conversation_id as session grouping
+            input["generation_id"],     // Cursor: generation_id as fallback
             input["id"]
         ) ?? "unknown"
     }
 
     private static func extractCwd(from input: [String: Any]) -> String {
-        return firstString(
+        // Try standard fields first
+        if let cwd = firstString(
             input["cwd"],
             nested(input, "session", "cwd"),
             input["workingDirectory"],
             input["workspace"]
-        ) ?? ""
+        ) {
+            return cwd
+        }
+        // Cursor: workspace_roots array
+        if let roots = input["workspace_roots"] as? [String], let first = roots.first {
+            return first
+        }
+        return ""
     }
 
     private static func extractToolName(from input: [String: Any]) -> String? {
@@ -135,6 +151,7 @@ enum EventMapper {
             .lowercased()
 
         let aliases: [String: String] = [
+            // Standard Claude Code events
             "sessionstart": "SessionStart",
             "sessionend": "SessionEnd",
             "userpromptsubmitted": "UserPromptSubmit",
@@ -149,6 +166,12 @@ enum EventMapper {
             "precompact": "PreCompact",
             "posttoolusefailure": "PostToolUseFailure",
             "erroroccurred": "Notification",
+            // Cursor-specific events
+            "beforesubmitprompt": "UserPromptSubmit",
+            "beforeshellexecution": "PermissionRequest",
+            "beforemcpexecution": "PermissionRequest",
+            "beforereadfile": "PreToolUse",
+            "afterfileedit": "PostToolUse",
         ]
 
         return aliases[key] ?? raw
@@ -172,6 +195,79 @@ enum EventMapper {
             return "compacting"
         default:
             return "unknown"
+        }
+    }
+
+    // MARK: - Cursor-Specific Field Extraction
+
+    /// Extract tool name, tool_input, and other fields from Cursor's event-specific stdin format.
+    /// Cursor events use different field names than Claude Code:
+    /// - beforeShellExecution: {command, cwd}
+    /// - beforeMCPExecution: {server, tool_name, tool_input}
+    /// - beforeReadFile: {content, file_path}
+    /// - afterFileEdit: {file_path, edits}
+    /// - beforeSubmitPrompt: {conversation_id, generation_id, prompt, attachments, workspace_roots}
+    /// - stop: {status}
+    private static func applyCursorFields(input: [String: Any], eventName: String, payload: inout [String: Any]) {
+        let key = eventName.lowercased()
+
+        switch key {
+        case "beforeshellexecution":
+            payload["tool"] = "Bash"
+            if let command = input["command"] as? String {
+                payload["tool_input"] = ["command": command]
+            }
+            // Generate a stable tool_use_id for permission correlation
+            payload["tool_use_id"] = "cursor-shell-\(UUID().uuidString.prefix(8))"
+
+        case "beforemcpexecution":
+            if let toolName = input["tool_name"] as? String {
+                // Prefix with MCP server name if available
+                if let server = input["server"] as? String {
+                    payload["tool"] = "mcp__\(server)__\(toolName)"
+                } else {
+                    payload["tool"] = toolName
+                }
+            }
+            if let toolInput = input["tool_input"] {
+                payload["tool_input"] = toolInput
+            }
+            payload["tool_use_id"] = "cursor-mcp-\(UUID().uuidString.prefix(8))"
+
+        case "beforereadfile":
+            payload["tool"] = "Read"
+            if let filePath = input["file_path"] as? String {
+                payload["tool_input"] = ["file_path": filePath]
+            }
+
+        case "afterfileedit":
+            payload["tool"] = "Edit"
+            if let filePath = input["file_path"] as? String {
+                payload["tool_input"] = ["file_path": filePath]
+            }
+
+        case "beforesubmitprompt":
+            if let prompt = input["prompt"] as? String {
+                payload["prompt"] = prompt
+            }
+            // Use conversation_id as session_id for better session grouping
+            if let convId = input["conversation_id"] as? String {
+                payload["session_id"] = convId
+            }
+
+        case "stop":
+            if let status = input["status"] as? String {
+                payload["last_assistant_message"] = "Cursor agent \(status)"
+            }
+
+        default:
+            break
+        }
+
+        // Extract workspace_roots for cwd if cwd is empty
+        if (payload["cwd"] as? String)?.isEmpty == true,
+           let roots = input["workspace_roots"] as? [String], let first = roots.first {
+            payload["cwd"] = first
         }
     }
 
