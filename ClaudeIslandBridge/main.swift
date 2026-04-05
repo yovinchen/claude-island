@@ -46,8 +46,8 @@ let ttyPath = TTYDetector.detectTTY()
 let ppid = ProcessInfo.processInfo.processIdentifier
 
 // Read stdin
-guard let inputData = try? FileHandle.standardInput.availableData,
-      !inputData.isEmpty else {
+let inputData = FileHandle.standardInput.availableData
+guard !inputData.isEmpty else {
     exit(0)
 }
 

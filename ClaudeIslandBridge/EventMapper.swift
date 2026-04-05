@@ -13,13 +13,14 @@ enum EventMapper {
     /// Map raw hook input into the unified protocol format
     static func map(input: [String: Any], source: String, tty: String?, ppid: Int) -> [String: Any] {
         let eventName = extractEventName(from: input)
-        let normalizedEvent = normalizeEventName(eventName)
+        let normalizedEvent = normalizeEventName(eventName, source: source)
+        let normalizedSource = normalizeSource(input: input, requestedSource: source)
         let sessionId = extractSessionId(from: input)
         let cwd = extractCwd(from: input)
 
         var payload: [String: Any] = [
             "session_id": sessionId,
-            "source": source,
+            "source": normalizedSource,
             "cwd": cwd,
             "event": normalizedEvent,
             "status": inferStatus(normalizedEvent),
@@ -62,6 +63,39 @@ enum EventMapper {
             payload["tool_use_id"] = toolUseId
         }
 
+        if source == "gemini" && normalizedEvent == "Notification" {
+            if payload["tool"] == nil, let notificationToolName = extractGeminiNotificationToolName(from: input) {
+                payload["tool"] = notificationToolName
+            }
+
+            if payload["tool_input"] == nil, let notificationDetails = extractGeminiNotificationDetails(from: input) {
+                payload["tool_input"] = notificationDetails
+            }
+        }
+
+        if let notificationType = extractNotificationType(from: input) {
+            payload["notification_type"] = notificationType
+        }
+
+        if let message = extractMessage(from: input) {
+            payload["message"] = String(message.prefix(500))
+        }
+
+        if let rateLimits = input["rate_limits"] ?? input["rateLimits"] {
+            payload["rate_limits"] = rateLimits
+        }
+
+        if source == "gemini",
+           normalizedEvent == "Notification",
+           (payload["notification_type"] as? String)?.lowercased() == "toolpermission" {
+            payload["status"] = "waiting_for_approval"
+            payload["approval_channel"] = "terminal"
+
+            if payload["tool_use_id"] == nil {
+                payload["tool_use_id"] = "gemini-tool-permission-\(UUID().uuidString.prefix(8))"
+            }
+        }
+
         // Permission requests need socket channel
         if normalizedEvent == "PermissionRequest" {
             payload["approval_channel"] = "socket"
@@ -70,22 +104,22 @@ enum EventMapper {
 
         // Event-specific content fields (for UI display)
         // UserPromptSubmit → user's prompt text
-        if let prompt = firstString(input["prompt"], input["text"]) {
+        if let prompt = extractPrompt(from: input) {
             payload["prompt"] = prompt
         }
 
         // PostToolUseFailure → error message (Qoder-specific)
-        if let error = firstString(input["error"], input["error_message"]) {
-            payload["error"] = error
+        if let error = extractError(from: input) {
+            payload["error"] = String(error.prefix(500))
         }
 
         // PostToolUse → tool response (brief, for status display)
-        if let toolResponse = input["tool_response"] as? String {
+        if let toolResponse = extractToolResponse(from: input) {
             payload["tool_response"] = String(toolResponse.prefix(500))
         }
 
         // Stop → last assistant message
-        if let lastMsg = firstString(input["last_assistant_message"], input["lastAssistantMessage"]) {
+        if let lastMsg = extractLastAssistantMessage(from: input) {
             payload["last_assistant_message"] = String(lastMsg.prefix(500))
         }
 
@@ -102,7 +136,9 @@ enum EventMapper {
             input["hook_event_name"],
             input["hookEventName"],
             input["event"],
-            input["type"]
+            input["type"],
+            input["notification_type"],
+            input["notificationType"]
         ) ?? "unknown"
     }
 
@@ -110,9 +146,12 @@ enum EventMapper {
         return firstString(
             input["session_id"],
             input["sessionId"],
+            input["thread_id"],
+            input["threadId"],
             nested(input, "session", "id"),
             input["conversation_id"],   // Cursor: conversation_id as session grouping
             input["generation_id"],     // Cursor: generation_id as fallback
+            input["turn_id"],
             input["id"]
         ) ?? "unknown"
     }
@@ -122,6 +161,7 @@ enum EventMapper {
         if let cwd = firstString(
             input["cwd"],
             nested(input, "session", "cwd"),
+            nested(input, "turn_context", "cwd"),
             input["workingDirectory"],
             input["workspace"]
         ) {
@@ -144,11 +184,42 @@ enum EventMapper {
 
     // MARK: - Event Name Normalization
 
-    static func normalizeEventName(_ raw: String) -> String {
+    private static func normalizeSource(input: [String: Any], requestedSource: String) -> String {
+        if requestedSource == "codex_notify" {
+            let client = firstString(
+                input["client"],
+                nested(input, "clientInfo", "name")
+            )?.lowercased()
+
+            if client == "codex-tui" || client == "codex-cli" {
+                return "codex_cli"
+            }
+
+            return "codex_desktop"
+        }
+
+        return requestedSource
+    }
+
+    static func normalizeEventName(_ raw: String, source: String? = nil) -> String {
         let key = raw
             .replacingOccurrences(of: "_", with: "")
             .replacingOccurrences(of: "-", with: "")
             .lowercased()
+
+        if source?.lowercased() == "gemini" {
+            let geminiAliases: [String: String] = [
+                "beforetool": "PreToolUse",
+                "aftertool": "PostToolUse",
+                "beforeagent": "UserPromptSubmit",
+                "afteragent": "Stop",
+                "precompress": "PreCompact",
+            ]
+
+            if let mapped = geminiAliases[key] {
+                return mapped
+            }
+        }
 
         let aliases: [String: String] = [
             // Standard Claude Code events
@@ -166,6 +237,11 @@ enum EventMapper {
             "precompact": "PreCompact",
             "posttoolusefailure": "PostToolUseFailure",
             "erroroccurred": "Notification",
+            // Codex desktop / notify aliases
+            "taskstarted": "UserPromptSubmit",
+            "usermessage": "UserPromptSubmit",
+            "taskcomplete": "Stop",
+            "agentturncomplete": "Stop",
             // Cursor-specific events
             "beforesubmitprompt": "UserPromptSubmit",
             "beforeshellexecution": "PermissionRequest",
@@ -279,6 +355,110 @@ enum EventMapper {
                 return str
             }
         }
+        return nil
+    }
+
+    private static func extractError(from input: [String: Any]) -> String? {
+        firstString(
+            input["error"],
+            input["error_message"],
+            nested(input, "tool_response", "error"),
+            nested(input, "toolResponse", "error")
+        )
+    }
+
+    private static func extractToolResponse(from input: [String: Any]) -> String? {
+        if let direct = firstString(input["tool_response"], input["toolResponse"]) {
+            return direct
+        }
+
+        if let returnDisplay = stringify(nested(input, "tool_response", "returnDisplay")) ??
+            stringify(nested(input, "toolResponse", "returnDisplay")) {
+            return returnDisplay
+        }
+
+        return stringify(nested(input, "tool_response", "llmContent")) ??
+            stringify(nested(input, "toolResponse", "llmContent"))
+    }
+
+    private static func extractLastAssistantMessage(from input: [String: Any]) -> String? {
+        firstString(
+            input["last_assistant_message"],
+            input["lastAssistantMessage"],
+            input["last_agent_message"],
+            input["lastAgentMessage"],
+            input["prompt_response"],
+            input["promptResponse"]
+        )
+    }
+
+    private static func extractPrompt(from input: [String: Any]) -> String? {
+        if let direct = firstString(input["prompt"], input["text"], input["message"]) {
+            return direct
+        }
+
+        if let inputMessages = input["input_messages"] as? [String], let first = inputMessages.first {
+            return first
+        }
+
+        if let inputMessages = input["inputMessages"] as? [String], let first = inputMessages.first {
+            return first
+        }
+
+        return nil
+    }
+
+    private static func extractNotificationType(from input: [String: Any]) -> String? {
+        firstString(
+            input["notification_type"],
+            input["notificationType"],
+            nested(input, "details", "type")
+        )
+    }
+
+    private static func extractGeminiNotificationToolName(from input: [String: Any]) -> String? {
+        firstString(
+            nested(input, "details", "tool_name"),
+            nested(input, "details", "toolName"),
+            nested(input, "details", "tool"),
+            nested(input, "details", "name"),
+            nested(input, "details", "function_name"),
+            nested(input, "details", "functionName")
+        )
+    }
+
+    private static func extractGeminiNotificationDetails(from input: [String: Any]) -> [String: Any]? {
+        guard var details = input["details"] as? [String: Any], !details.isEmpty else {
+            return nil
+        }
+
+        details.removeValue(forKey: "type")
+        return details.isEmpty ? nil : details
+    }
+
+    private static func extractMessage(from input: [String: Any]) -> String? {
+        firstString(
+            input["message"],
+            nested(input, "details", "message"),
+            nested(input, "details", "title"),
+            nested(input, "details", "description")
+        ) ?? stringify(input["details"])
+    }
+
+    private static func stringify(_ value: Any?) -> String? {
+        guard let value else { return nil }
+
+        if let str = value as? String, !str.isEmpty {
+            return str
+        }
+
+        if JSONSerialization.isValidJSONObject(value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: []),
+           let text = String(data: data, encoding: .utf8),
+           !text.isEmpty {
+            return text
+        }
+
         return nil
     }
 
