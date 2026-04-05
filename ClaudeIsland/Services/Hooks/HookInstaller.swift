@@ -509,10 +509,14 @@ struct CodexHookSource: HookSource {
         }
     }
 
-    /// Codex's current official hook surface.
+    /// Codex's current official hook surface (5 events as of 2026-04).
+    /// PreToolUse/PostToolUse currently only support Bash tool.
     private static let events: [EventConfig] = [
         .init("SessionStart", matcher: "startup|resume"),
-        .init("UserPromptSubmit")
+        .init("UserPromptSubmit"),
+        .init("PreToolUse", matcher: "Bash"),
+        .init("PostToolUse", matcher: "Bash"),
+        .init("Stop"),
     ]
 
     var sourceType: SessionSource { .codexCLI }
@@ -1229,14 +1233,20 @@ struct OpenCodeHookSource: HookSource {
             tool_name: tool?.name,
             tool_input: tool?.input,
             tool_use_id: tool?.id,
+            tool_response: tool?.result || tool?.output,
             pid: process.pid
           };
           try {
-            execSync(`echo '${JSON.stringify(payload)}' | \(bridgePath) --source opencode`, {
+            execSync('\(bridgePath) --source opencode', {
+              input: JSON.stringify(payload),
               timeout: 5000,
-              stdio: 'pipe'
+              stdio: ['pipe', 'pipe', 'pipe']
             });
-          } catch {}
+          } catch (e) {
+            if (process.env.CLAUDE_ISLAND_DEBUG) {
+              console.error('[claude-island]', e.message);
+            }
+          }
         }
         """
 
@@ -1280,7 +1290,7 @@ struct CopilotHookSource: HookSource {
         let command = "\(bridgePath) --source copilot"
         let hookEntry: [String: Any] = ["type": "command", "command": command]
 
-        let events = ["sessionStart", "sessionEnd", "toolUse", "stop"]
+        let events = ["sessionStart", "sessionEnd", "preToolUse", "postToolUse", "postToolUseFailure", "userPromptSubmitted", "errorOccurred", "preCompact", "notification", "stop"]
 
         for event in events {
             if var existing = hooks[event] as? [[String: Any]] {
@@ -1490,7 +1500,7 @@ struct QoderHookSource: HookSource {
     /// See: https://docs.qoder.com/zh/extensions/hooks
     private static let qoderEvents: [GenericSettingsHookSource.EventConfig] = [
         .init("UserPromptSubmit"),
-        .init("PreToolUse", matcher: "*"),
+        .init("PreToolUse", matcher: "*", timeout: 120),  // Extended for implicit permission approval
         .init("PostToolUse", matcher: "*"),
         .init("PostToolUseFailure", matcher: "*"),
         .init("Stop"),
@@ -1511,11 +1521,17 @@ struct QoderHookSource: HookSource {
 // MARK: - Droid Hook Source
 
 struct DroidHookSource: HookSource {
+    /// Droid is Claude Code-compatible and already in hookSpecificOutputSources,
+    /// so adding PermissionRequest enables Notch-based permission approval.
+    private static let droidEvents: [GenericSettingsHookSource.EventConfig] =
+        GenericSettingsHookSource.defaultEvents + [
+            .init("SubagentStop"),
+            .init("PermissionRequest", matcher: "*", timeout: 86400),
+        ]
+
     private let inner = GenericSettingsHookSource(
         sourceType: .droid, displayName: "Droid", configDir: ".factory", sourceName: "droid",
-        events: GenericSettingsHookSource.defaultEvents + [
-            .init("SubagentStop"),
-        ]
+        events: droidEvents
     )
     var sourceType: SessionSource { inner.sourceType }
     var displayName: String { inner.displayName }
@@ -1534,7 +1550,7 @@ struct CodeBuddyHookSource: HookSource {
     private static let codeBuddyEvents: [GenericSettingsHookSource.EventConfig] = [
         .init("SessionStart"),
         .init("SessionEnd"),
-        .init("PreToolUse", matcher: "*"),
+        .init("PreToolUse", matcher: "*", timeout: 120),  // Extended for implicit permission approval
         .init("PostToolUse", matcher: "*"),
         .init("UserPromptSubmit"),
         .init("Stop"),
