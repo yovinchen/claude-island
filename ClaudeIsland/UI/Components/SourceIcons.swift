@@ -53,8 +53,18 @@ struct SourceIcon: View {
             CodeBuddyPixelIcon(size: size)
         case .qoder:
             QoderPixelIcon(size: size)
+        case .qoderCLI:
+            QoderPixelIcon(size: size)
         case .droid:
             DroidPixelIcon(size: size)
+        case .windsurf:
+            CursorPixelIcon(size: size)
+        case .kimiCLI:
+            CodexPixelIcon(size: size)
+        case .kiroCLI:
+            GeminiPixelIcon(size: size)
+        case .ampCLI:
+            OpenCodePixelIcon(size: size)
         case .trae:
             TraePixelIcon(size: size)
         case .unknown:

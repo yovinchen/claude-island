@@ -250,7 +250,8 @@ struct SettingsHookList: View {
     @State private var statuses: [SessionSource: Bool] = [:]
 
     private let sources: [SessionSource] = [
-        .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot,
+        .claude, .codexCLI, .gemini, .cursor, .windsurf, .kimiCLI, .kiroCLI,
+        .ampCLI, .opencode, .copilot,
         .qoder, .droid, .codebuddy
     ]
 

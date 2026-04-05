@@ -18,7 +18,12 @@ enum SessionSource: String, Codable, CaseIterable, Sendable {
     case copilot
     case codebuddy
     case qoder
+    case qoderCLI = "qoder_cli"
     case droid
+    case windsurf
+    case kimiCLI = "kimi_cli"
+    case kiroCLI = "kiro_cli"
+    case ampCLI = "amp_cli"
     case trae
     case unknown
 
@@ -47,8 +52,18 @@ enum SessionSource: String, Codable, CaseIterable, Sendable {
             self = .codebuddy
         case "qoder":
             self = .qoder
+        case "qoder_cli":
+            self = .qoderCLI
         case "droid":
             self = .droid
+        case "windsurf":
+            self = .windsurf
+        case "kimi", "kimi_cli":
+            self = .kimiCLI
+        case "kiro", "kiro_cli":
+            self = .kiroCLI
+        case "amp", "amp_cli":
+            self = .ampCLI
         case "trae":
             self = .trae
         default:
@@ -68,7 +83,12 @@ enum SessionSource: String, Codable, CaseIterable, Sendable {
         case .copilot: return "Copilot"
         case .codebuddy: return "CodeBuddy"
         case .qoder: return "Qoder"
+        case .qoderCLI: return "Qoder CLI"
         case .droid: return "Droid"
+        case .windsurf: return "Windsurf"
+        case .kimiCLI: return "Kimi CLI"
+        case .kiroCLI: return "Kiro CLI"
+        case .ampCLI: return "Amp CLI"
         case .trae: return "Trae"
         case .unknown: return "Unknown"
         }
@@ -387,6 +407,7 @@ struct SessionState: Identifiable, Sendable {
             case "hyper": return "Hyper"
             case "tmux": return "tmux"
             case "vscode": return "VS Code"
+            case "windsurf": return "Windsurf"
             default: return termProgram
             }
         }
@@ -396,6 +417,7 @@ struct SessionState: Identifiable, Sendable {
             let ideNames: [String: String] = [
                 "com.microsoft.VSCode": "VS Code",
                 "com.todesktop.230313mzl4w4u92": "Cursor",
+                "com.exafunction.windsurf": "Windsurf",
                 "com.jetbrains.intellij": "IntelliJ",
                 "com.jetbrains.intellij.ce": "IntelliJ CE",
                 "com.jetbrains.WebStorm": "WebStorm",

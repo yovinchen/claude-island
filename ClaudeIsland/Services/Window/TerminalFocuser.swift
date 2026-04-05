@@ -137,6 +137,7 @@ actor TerminalFocuser {
             "org.alacritty",
             "com.github.wez.wezterm",
             "co.zeit.hyper",
+            "dev.warp.Warp-Stable",
             // IDEs (for Qoder, Cursor, Copilot etc. running as extensions)
             "com.microsoft.VSCode",
             "com.jetbrains.intellij",
@@ -150,6 +151,7 @@ actor TerminalFocuser {
             "com.jetbrains.rubymine",
             "com.jetbrains.PhpStorm",
             "com.todesktop.230313mzl4w4u92",  // Cursor
+            "com.exafunction.windsurf",
             "dev.zed.Zed",
         ]
 
@@ -187,6 +189,8 @@ actor TerminalFocuser {
             "alacritty": "org.alacritty",
             "wezterm": "com.github.wez.wezterm",
             "hyper": "co.zeit.hyper",
+            "warp": "dev.warp.Warp-Stable",
+            "windsurf": "com.exafunction.windsurf",
             "vscode": "com.microsoft.VSCode",
             "tmux": "" // tmux itself isn't an app
         ]

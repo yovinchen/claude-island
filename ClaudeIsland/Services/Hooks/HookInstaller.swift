@@ -44,6 +44,10 @@ struct HookInstaller {
         CodexHookSource(),
         GeminiHookSource(),
         CursorHookSource(),
+        WindsurfHookSource(),
+        KimiHookSource(),
+        KiroHookSource(),
+        AmpHookSource(),
         OpenCodeHookSource(),
         CopilotHookSource(),
         QoderHookSource(),
@@ -207,6 +211,33 @@ struct HookInstaller {
         if fm.fileExists(atPath: "\(home)/.cursor") ||
            fm.fileExists(atPath: "/Applications/Cursor.app") {
             installed.append(.cursor)
+        }
+
+        // Windsurf: check ~/.codeium/windsurf or /Applications/Windsurf.app
+        if fm.fileExists(atPath: "\(home)/.codeium/windsurf") ||
+           fm.fileExists(atPath: "/Applications/Windsurf.app") {
+            installed.append(.windsurf)
+        }
+
+        // Kimi CLI: check ~/.kimi or common executable locations
+        if fm.fileExists(atPath: "\(home)/.kimi") ||
+           fm.fileExists(atPath: "/usr/local/bin/kimi") ||
+           fm.fileExists(atPath: "/opt/homebrew/bin/kimi") {
+            installed.append(.kimiCLI)
+        }
+
+        // Kiro CLI: check ~/.kiro or common executable locations
+        if fm.fileExists(atPath: "\(home)/.kiro") ||
+           fm.fileExists(atPath: "/usr/local/bin/kiro-cli") ||
+           fm.fileExists(atPath: "/opt/homebrew/bin/kiro-cli") {
+            installed.append(.kiroCLI)
+        }
+
+        // Amp CLI: check ~/.config/amp or common executable locations
+        if fm.fileExists(atPath: "\(home)/.config/amp") ||
+           fm.fileExists(atPath: "/usr/local/bin/amp") ||
+           fm.fileExists(atPath: "/opt/homebrew/bin/amp") {
+            installed.append(.ampCLI)
         }
 
         // OpenCode: check ~/.config/opencode
@@ -444,6 +475,7 @@ struct ClaudeHookSource: HookSource {
         var hooks = json["hooks"] as? [String: Any] ?? [:]
 
         let hookEvents: [(String, [[String: Any]])] = [
+            ("Setup", withoutMatcher),
             ("UserPromptSubmit", withoutMatcher),
             ("PreToolUse", withMatcher),
             ("PostToolUse", withMatcher),
@@ -454,6 +486,7 @@ struct ClaudeHookSource: HookSource {
             ("SessionStart", withoutMatcher),
             ("SessionEnd", withoutMatcher),
             ("PreCompact", preCompactConfig),
+            ("PostCompact", withoutMatcher),
         ]
 
         for (event, config) in hookEvents {
@@ -1179,6 +1212,408 @@ struct CursorHookSource: HookSource {
             }
             return false
         }
+    }
+}
+
+// MARK: - Windsurf Hook Source
+
+struct WindsurfHookSource: HookSource {
+    var sourceType: SessionSource { .windsurf }
+    var displayName: String { "Windsurf" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codeium/windsurf/hooks.json").path
+    }
+
+    private static let events = [
+        "pre_user_prompt",
+        "pre_run_command",
+        "post_run_command",
+        "pre_read_code",
+        "pre_write_code",
+        "post_write_code",
+        "post_cascade_response"
+    ]
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+        let command = "\(HookInstaller.hookCommandPath()) --source windsurf"
+
+        for event in Self.events {
+            let hookEntry: [String: Any] = [
+                "command": command,
+                "show_output": false
+            ]
+
+            if var existing = hooks[event] as? [[String: Any]] {
+                existing.removeAll { ($0["command"] as? String)?.contains("claude-island") == true }
+                existing.append(hookEntry)
+                hooks[event] = existing
+            } else {
+                hooks[event] = [hookEntry]
+            }
+        }
+
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try data.write(to: configURL)
+        }
+    }
+
+    func uninstall() throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        guard let data = try? Data(contentsOf: configURL),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hooks = json["hooks"] as? [String: Any] else { return }
+
+        for (event, value) in hooks {
+            if var entries = value as? [[String: Any]] {
+                entries.removeAll { ($0["command"] as? String)?.contains("claude-island") == true }
+                if entries.isEmpty {
+                    hooks.removeValue(forKey: event)
+                } else {
+                    hooks[event] = entries
+                }
+            }
+        }
+
+        if hooks.isEmpty { json.removeValue(forKey: "hooks") } else { json["hooks"] = hooks }
+
+        if let updated = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try updated.write(to: configURL)
+        }
+    }
+
+    func isInstalled() -> Bool {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else { return false }
+
+        return hooks.values.contains { value in
+            if let entries = value as? [[String: Any]] {
+                return entries.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+            }
+            return false
+        }
+    }
+}
+
+// MARK: - Kimi Hook Source
+
+struct KimiHookSource: HookSource {
+    var sourceType: SessionSource { .kimiCLI }
+    var displayName: String { "Kimi CLI" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".kimi/config.toml").path
+    }
+
+    private let blockStart = "# claude-island-kimi-hooks:start"
+    private let blockEnd = "# claude-island-kimi-hooks:end"
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let current = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        let cleaned = removeManagedBlock(from: current)
+        let merged = appendManagedBlock(to: cleaned, command: "\(HookInstaller.hookCommandPath()) --source kimi_cli")
+        try merged.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    func uninstall() throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        let current = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        let cleaned = removeManagedBlock(from: current)
+        try cleaned.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    func isInstalled() -> Bool {
+        guard let content = try? String(contentsOfFile: configPath, encoding: .utf8) else { return false }
+        return content.contains(blockStart) && content.contains("--source kimi_cli")
+    }
+
+    private func removeManagedBlock(from content: String) -> String {
+        guard let start = content.range(of: blockStart),
+              let end = content.range(of: blockEnd) else {
+            return content
+        }
+
+        let removeRange = start.lowerBound..<end.upperBound
+        var updated = content.replacingCharacters(in: removeRange, with: "")
+        while updated.contains("\n\n\n") {
+            updated = updated.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+        return updated.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func appendManagedBlock(to content: String, command: String) -> String {
+        let events: [(String, Int?)] = [
+            ("SessionStart", nil),
+            ("SessionEnd", nil),
+            ("UserPromptSubmit", nil),
+            ("PreToolUse", 120),
+            ("PostToolUse", nil),
+            ("Notification", nil),
+            ("Stop", nil),
+            ("PreCompact", nil),
+            ("PostCompact", nil),
+            ("SubagentStop", nil),
+        ]
+
+        var lines = [blockStart]
+        for (index, event) in events.enumerated() {
+            if index > 0 {
+                lines.append("")
+            }
+            lines.append("[[hooks]]")
+            lines.append("event = \"\(event.0)\"")
+            lines.append("command = \"\(command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\"")
+            if let timeout = event.1 {
+                lines.append("timeout = \(timeout)")
+            }
+        }
+        lines.append(blockEnd)
+
+        let block = lines.joined(separator: "\n")
+        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return block + "\n"
+        }
+        return content.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" + block + "\n"
+    }
+}
+
+// MARK: - Kiro Hook Source
+
+struct KiroHookSource: HookSource {
+    var sourceType: SessionSource { .kiroCLI }
+    var displayName: String { "Kiro CLI" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".kiro/agents/claude-island.json").path
+    }
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let command = "\(HookInstaller.hookCommandPath()) --source kiro_cli"
+        let hookEntry: [String: Any] = [
+            "type": "command",
+            "command": command
+        ]
+
+        let json: [String: Any] = [
+            "name": "claude-island",
+            "description": "Claude Island integration agent",
+            "hooks": [
+                "agentSpawn": [hookEntry],
+                "userPromptSubmit": [hookEntry],
+                "preToolUse": [[
+                    "type": "command",
+                    "command": command,
+                    "timeout": 120
+                ]],
+                "postToolUse": [hookEntry],
+                "notification": [hookEntry],
+                "stop": [hookEntry],
+                "sessionEnd": [hookEntry],
+                "sessionClear": [hookEntry]
+            ]
+        ]
+
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try data.write(to: configURL)
+        }
+    }
+
+    func uninstall() throws {
+        try? FileManager.default.removeItem(atPath: configPath)
+    }
+
+    func isInstalled() -> Bool {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else { return false }
+
+        return hooks.values.contains { value in
+            if let entries = value as? [[String: Any]] {
+                return entries.contains { ($0["command"] as? String)?.contains("claude-island") == true }
+            }
+            return false
+        }
+    }
+}
+
+// MARK: - Amp Hook Source
+
+struct AmpHookSource: HookSource {
+    var sourceType: SessionSource { .ampCLI }
+    var displayName: String { "Amp CLI" }
+
+    var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/amp/plugins/claude-island.ts").path
+    }
+
+    func install(bridgePath: String) throws {
+        let configURL = URL(fileURLWithPath: configPath)
+        try? FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let launcher = HookInstaller.hookCommandPath()
+        let script = """
+        // @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
+        import type { PluginAPI } from '@ampcode/plugin'
+        import { randomUUID } from 'node:crypto'
+        import { spawnSync } from 'node:child_process'
+        import process from 'node:process'
+
+        export default function (amp: PluginAPI) {
+          let sessionId = nextSessionId()
+
+          amp.on('session.start', () => {
+            sessionId = nextSessionId()
+            send({
+              hook_event_name: 'SessionStart',
+              session_id: sessionId,
+              cwd: process.cwd(),
+            })
+          })
+
+          amp.on('agent.start', (event) => {
+            send({
+              hook_event_name: 'UserPromptSubmit',
+              session_id: sessionId,
+              cwd: process.cwd(),
+              prompt: event.message,
+            })
+          })
+
+          amp.on('tool.call', (event) => {
+            const result = sendAndReceive({
+              hook_event_name: 'PreToolUse',
+              session_id: sessionId,
+              cwd: process.cwd(),
+              tool_name: event.tool,
+              tool_input: event.input,
+              tool_use_id: event.toolUseID,
+            })
+
+            if (result?.permissionDecision === 'deny') {
+              return {
+                action: 'reject-and-continue',
+                message: result.permissionDecisionReason || `Claude Island rejected ${event.tool}.`,
+              }
+            }
+
+            return { action: 'allow' }
+          })
+
+          amp.on('tool.result', (event) => {
+            send({
+              hook_event_name: event.status === 'error' ? 'PostToolUseFailure' : 'PostToolUse',
+              session_id: sessionId,
+              cwd: process.cwd(),
+              tool_name: event.tool,
+              tool_input: event.input,
+              tool_use_id: event.toolUseID,
+              tool_response: stringify(event.output),
+              error: event.error,
+            })
+          })
+
+          amp.on('agent.end', (event) => {
+            const lastText = extractLastAssistantText(event.messages)
+            send({
+              hook_event_name: 'Stop',
+              session_id: sessionId,
+              cwd: process.cwd(),
+              last_assistant_message: lastText,
+              message: event.status,
+            })
+          })
+        }
+
+        function nextSessionId() {
+          return `amp-${randomUUID()}`
+        }
+
+        function spawnBridge(input) {
+          return spawnSync(process.env.SHELL || '/bin/sh', ['-lc', '\(launcher) --source amp_cli'], {
+            input: JSON.stringify(input),
+            encoding: 'utf8',
+          })
+        }
+
+        function send(input) {
+          spawnBridge(input)
+        }
+
+        function sendAndReceive(input) {
+          const result = spawnBridge(input)
+          if (!result.stdout) return null
+          try {
+            return JSON.parse(result.stdout)
+          } catch {
+            return null
+          }
+        }
+
+        function stringify(value) {
+          if (value == null) return undefined
+          if (typeof value === 'string') return value
+          try {
+            return JSON.stringify(value)
+          } catch {
+            return String(value)
+          }
+        }
+
+        function extractLastAssistantText(messages) {
+          if (!Array.isArray(messages)) return undefined
+          const assistant = [...messages].reverse().find((m) => m && m.role === 'assistant')
+          if (!assistant || !Array.isArray(assistant.content)) return undefined
+          const parts = assistant.content
+            .filter((block) => block && block.type === 'text' && typeof block.text === 'string')
+            .map((block) => block.text)
+          return parts.length > 0 ? parts.join('\\n') : undefined
+        }
+        """
+
+        try script.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    func uninstall() throws {
+        try? FileManager.default.removeItem(atPath: configPath)
+    }
+
+    func isInstalled() -> Bool {
+        FileManager.default.fileExists(atPath: configPath)
     }
 }
 

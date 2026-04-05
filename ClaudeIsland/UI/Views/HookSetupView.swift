@@ -19,7 +19,8 @@ struct HookSetupView: View {
     @State private var installComplete: Bool = false
 
     private let allTools: [SessionSource] = [
-        .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot,
+        .claude, .codexCLI, .gemini, .cursor, .windsurf, .kimiCLI, .kiroCLI,
+        .ampCLI, .opencode, .copilot,
         .qoder, .droid, .codebuddy
     ]
 
@@ -276,6 +277,10 @@ struct ToolSetupRow: View {
         case .codexCLI: return "~/.codex/hooks.json + ~/.codex/config.toml"
         case .gemini: return "~/.gemini/settings.json or .gemini/settings.json"
         case .cursor: return "~/.cursor/hooks.json or .cursor/hooks.json"
+        case .windsurf: return "~/.codeium/windsurf/hooks.json"
+        case .kimiCLI: return "~/.kimi/config.toml"
+        case .kiroCLI: return "~/.kiro/agents/claude-island.json"
+        case .ampCLI: return "~/.config/amp/plugins/claude-island.ts"
         case .opencode: return "~/.config/opencode/plugins/"
         case .copilot: return "~/.copilot/config.json"
         case .qoder: return "~/.qoder/settings.json"
