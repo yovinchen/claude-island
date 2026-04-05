@@ -257,6 +257,12 @@ class CodexSessionWatcher {
             return nil
         }
 
+        if type == "response_item",
+           let payload = json["payload"] as? [String: Any],
+           let itemType = payload["type"] as? String {
+            return desktopResponseItemEvent(from: payload, itemType: itemType, sessionId: sessionId, cwd: cwd)
+        }
+
         guard type == "event_msg",
               let payload = json["payload"] as? [String: Any],
               let eventType = payload["type"] as? String else {
@@ -324,6 +330,82 @@ class CodexSessionWatcher {
         default:
             return nil
         }
+    }
+
+    private func desktopResponseItemEvent(
+        from payload: [String: Any],
+        itemType: String,
+        sessionId: String,
+        cwd: String
+    ) -> HookEvent? {
+        switch itemType {
+        case "function_call":
+            guard let toolName = payload["name"] as? String,
+                  let callId = payload["call_id"] as? String else {
+                return nil
+            }
+
+            let toolInput = decodeToolInput(payload["arguments"])
+
+            return HookEvent(
+                sessionId: sessionId,
+                source: .codexDesktop,
+                cwd: cwd,
+                event: "PreToolUse",
+                status: "running_tool",
+                pid: nil,
+                tty: nil,
+                approvalChannel: .none,
+                tool: toolName,
+                toolInput: toolInput,
+                toolUseId: callId,
+                notificationType: nil,
+                message: nil
+            )
+
+        case "function_call_output":
+            guard let callId = payload["call_id"] as? String else {
+                return nil
+            }
+
+            return HookEvent(
+                sessionId: sessionId,
+                source: .codexDesktop,
+                cwd: cwd,
+                event: "PostToolUse",
+                status: "processing",
+                pid: nil,
+                tty: nil,
+                approvalChannel: .none,
+                tool: nil,
+                toolInput: nil,
+                toolUseId: callId,
+                notificationType: nil,
+                message: nil,
+                toolResponse: payload["output"] as? String
+            )
+
+        default:
+            return nil
+        }
+    }
+
+    private func decodeToolInput(_ raw: Any?) -> [String: AnyCodable]? {
+        if let dict = raw as? [String: Any] {
+            return dict.reduce(into: [String: AnyCodable]()) { partialResult, entry in
+                partialResult[entry.key] = AnyCodable(entry.value)
+            }
+        }
+
+        if let jsonString = raw as? String,
+           let data = jsonString.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return dict.reduce(into: [String: AnyCodable]()) { partialResult, entry in
+                partialResult[entry.key] = AnyCodable(entry.value)
+            }
+        }
+
+        return nil
     }
 
     private func emitSessionStart(sessionId: String, cwd: String) {

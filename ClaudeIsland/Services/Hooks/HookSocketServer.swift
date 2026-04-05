@@ -573,7 +573,9 @@ class HookSocketServer {
             return buildHookSpecificOutputResponse(decision: decision, reason: reason, alwaysAllow: alwaysAllow, allowAll: allowAll, autoApprove: autoApprove, toolName: toolName)
         } else if source == .cursor {
             return buildCursorResponse(decision: decision, alwaysAllow: alwaysAllow)
-        } else if source == .qoder || source == .codebuddy || source == .codexCLI {
+        } else if source == .copilot || source == .ampCLI {
+            return buildCopilotResponse(decision: decision, reason: reason)
+        } else if source == .qoder || source == .codebuddy || source == .codexCLI || source == .kimiCLI {
             return buildPreToolUsePermissionResponse(decision: decision, reason: reason)
         } else {
             let response = HookResponse(decision: decision, reason: reason)
@@ -598,6 +600,17 @@ class HookSocketServer {
             response["continue"] = false
         }
 
+        return try? JSONSerialization.data(withJSONObject: response, options: [])
+    }
+
+    /// Build Copilot CLI preToolUse response format.
+    /// Copilot expects a flat JSON object rather than Claude-style hookSpecificOutput.
+    /// {"permissionDecision":"allow|deny|ask","permissionDecisionReason":"..."}
+    private func buildCopilotResponse(decision: String, reason: String?) -> Data? {
+        let response: [String: Any] = [
+            "permissionDecision": decision == "allow" ? "allow" : "deny",
+            "permissionDecisionReason": reason ?? (decision == "allow" ? "Approved by user" : "Denied by user")
+        ]
         return try? JSONSerialization.data(withJSONObject: response, options: [])
     }
 

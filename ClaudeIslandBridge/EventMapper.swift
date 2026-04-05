@@ -48,6 +48,8 @@ enum EventMapper {
         // Cursor-specific: infer tool name and input from event-specific fields
         if source == "cursor" {
             applyCursorFields(input: input, eventName: eventName, payload: &payload)
+        } else if source == "windsurf" {
+            applyWindsurfFields(input: input, eventName: eventName, payload: &payload)
         }
 
         // Tool info (generic extraction, won't overwrite Cursor-set fields)
@@ -58,6 +60,14 @@ enum EventMapper {
         if payload["tool_input"] == nil,
            let toolInput = input["tool_input"] ?? input["toolInput"] ?? nested(input, "tool", "input") {
             payload["tool_input"] = toolInput
+        } else if payload["tool_input"] == nil,
+                  let toolArgs = firstString(input["toolArgs"], input["tool_args"]) {
+            if let data = toolArgs.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) {
+                payload["tool_input"] = json
+            } else {
+                payload["tool_input"] = ["raw": toolArgs]
+            }
         }
 
         if let toolUseId = firstString(
@@ -142,6 +152,7 @@ enum EventMapper {
             input["hookEventName"],
             input["event"],
             input["type"],
+            input["agent_action_name"],
             input["notification_type"],
             input["notificationType"]
         ) ?? "unknown"
@@ -154,6 +165,8 @@ enum EventMapper {
             input["thread_id"],
             input["threadId"],
             nested(input, "session", "id"),
+            input["trajectory_id"],
+            input["execution_id"],
             input["conversation_id"],   // Cursor: conversation_id as session grouping
             input["generation_id"],     // Cursor: generation_id as fallback
             input["turn_id"],
@@ -176,12 +189,14 @@ enum EventMapper {
         if let roots = input["workspace_roots"] as? [String], let first = roots.first {
             return first
         }
-        return ""
+        return FileManager.default.currentDirectoryPath
     }
 
     private static func extractToolName(from input: [String: Any]) -> String? {
         if let name = input["tool_name"] as? String { return name }
         if let name = input["toolName"] as? String { return name }
+        if let name = nested(input, "tool_info", "tool_name") as? String { return name }
+        if let name = nested(input, "tool_info", "toolName") as? String { return name }
         if let tool = input["tool"] as? [String: Any], let name = tool["name"] as? String { return name }
         if let name = input["tool"] as? String { return name }
         return nil
@@ -236,8 +251,11 @@ enum EventMapper {
             "posttooluse": "PostToolUse",
             "permissionrequest": "PermissionRequest",
             "agentstop": "Stop",
+            "setup": "Setup",
             "stop": "Stop",
+            "postcompact": "PostCompact",
             "subagentstop": "SubagentStop",
+            "subagentstart": "SubagentStart",
             "notification": "Notification",
             "precompact": "PreCompact",
             "posttoolusefailure": "PostToolUseFailure",
@@ -255,6 +273,17 @@ enum EventMapper {
             "beforemcpexecution": "PermissionRequest",
             "beforereadfile": "PreToolUse",
             "afterfileedit": "PostToolUse",
+            // Windsurf-specific events
+            "preuserprompt": "UserPromptSubmit",
+            "preruncommand": "PreToolUse",
+            "postruncommand": "PostToolUse",
+            "prereadcode": "PreToolUse",
+            "prewritecode": "PreToolUse",
+            "postwritecode": "PostToolUse",
+            "postcascaderesponse": "Stop",
+            // Kiro custom agent hooks
+            "agentspawn": "SessionStart",
+            "sessionclear": "Notification",
         ]
 
         return aliases[key] ?? raw
@@ -270,7 +299,9 @@ enum EventMapper {
             return "processing"
         case "PermissionRequest":
             return "waiting_for_approval"
-        case "SessionStart", "Stop", "SubagentStop":
+        case "Setup":
+            return "starting"
+        case "SessionStart", "Stop", "SubagentStop", "PostCompact":
             return "waiting_for_input"
         case "SessionEnd":
             return "ended"
@@ -370,6 +401,73 @@ enum EventMapper {
         }
     }
 
+    /// Extract tool/prompt fields from Windsurf's hook payload.
+    private static func applyWindsurfFields(input: [String: Any], eventName: String, payload: inout [String: Any]) {
+        let key = eventName.lowercased()
+        let toolInfo = input["tool_info"] as? [String: Any] ?? [:]
+        let executionId = firstString(input["execution_id"], toolInfo["execution_id"])
+
+        switch key {
+        case "pre_user_prompt":
+            if let prompt = firstString(toolInfo["user_prompt"], input["prompt"]) {
+                payload["prompt"] = prompt
+            }
+
+        case "pre_run_command":
+            payload["tool"] = "Bash"
+            var toolInput: [String: Any] = [:]
+            if let command = firstString(toolInfo["command"], input["command"]) {
+                toolInput["command"] = command
+            }
+            if let cwd = firstString(toolInfo["cwd"]) {
+                toolInput["cwd"] = cwd
+                payload["cwd"] = cwd
+            }
+            if !toolInput.isEmpty {
+                payload["tool_input"] = toolInput
+            }
+
+        case "post_run_command":
+            payload["tool"] = "Bash"
+            if let command = firstString(toolInfo["command"], input["command"]) {
+                payload["tool_input"] = ["command": command]
+            }
+            if let output = firstString(toolInfo["command_output"], toolInfo["output"], input["output"]) {
+                payload["tool_response"] = output
+            }
+
+        case "pre_read_code":
+            payload["tool"] = "Read"
+            if let path = firstString(toolInfo["file_path"], toolInfo["path"]) {
+                payload["tool_input"] = ["file_path": path]
+            }
+
+        case "pre_write_code":
+            payload["tool"] = "Write"
+            if let path = firstString(toolInfo["file_path"], toolInfo["path"]) {
+                payload["tool_input"] = ["file_path": path]
+            }
+
+        case "post_write_code":
+            payload["tool"] = "Write"
+            if let path = firstString(toolInfo["file_path"], toolInfo["path"]) {
+                payload["tool_input"] = ["file_path": path]
+            }
+
+        case "post_cascade_response":
+            if let response = firstString(toolInfo["response"], input["response"], input["message"]) {
+                payload["last_assistant_message"] = response
+            }
+
+        default:
+            break
+        }
+
+        if let executionId {
+            payload["tool_use_id"] = executionId
+        }
+    }
+
     // MARK: - Helpers
 
     private static func firstString(_ values: Any?...) -> String? {
@@ -401,7 +499,10 @@ enum EventMapper {
         }
 
         return stringify(nested(input, "tool_response", "llmContent")) ??
-            stringify(nested(input, "toolResponse", "llmContent"))
+            stringify(nested(input, "toolResponse", "llmContent")) ??
+            stringify(nested(input, "toolResult", "textResultForLlm")) ??
+            stringify(nested(input, "tool_result", "textResultForLlm")) ??
+            stringify(nested(input, "toolResult", "textResult"))
     }
 
     private static func extractLastAssistantMessage(from input: [String: Any]) -> String? {
@@ -418,6 +519,10 @@ enum EventMapper {
     private static func extractPrompt(from input: [String: Any]) -> String? {
         if let direct = firstString(input["prompt"], input["text"], input["message"]) {
             return direct
+        }
+
+        if let windsurfPrompt = firstString(nested(input, "tool_info", "user_prompt")) {
+            return windsurfPrompt
         }
 
         if let inputMessages = input["input_messages"] as? [String], let first = inputMessages.first {

@@ -165,10 +165,11 @@ let socketPath = ProcessInfo.processInfo.environment["CLAUDE_ISLAND_SOCKET_PATH"
 let client = SocketClient(path: socketPath)
 
 if PermissionHandler.isPermissionRequest(payload: payload) {
-    PermissionHandler.handle(client: client, data: payloadData)
+    let sourceName = payload["source"] as? String ?? source
+    exit(PermissionHandler.handle(client: client, data: payloadData, source: sourceName))
 } else if PermissionHandler.isImplicitPermissionRequest(payload: payload) {
     // Qoder/CodeBuddy: PreToolUse on dangerous tools acts as implicit permission request
-    PermissionHandler.handleImplicit(client: client, payload: payload)
+    exit(PermissionHandler.handleImplicit(client: client, payload: payload))
 } else {
     client.send(data: payloadData)
 }
