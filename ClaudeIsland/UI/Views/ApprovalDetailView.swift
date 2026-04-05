@@ -2,7 +2,8 @@
 //  ApprovalDetailView.swift
 //  ClaudeIsland
 //
-//  Full-panel approval view with tool details and 4-tier approval buttons
+//  Full-panel approval view matching Vibe Island style.
+//  Shows session header, tool command card, and 4 colored approval buttons.
 //
 
 import SwiftUI
@@ -16,6 +17,8 @@ struct ApprovalDetailView: View {
     @State private var showButtons = false
 
     private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+    private let approvalBlue = Color(red: 0.25, green: 0.48, blue: 0.85)
+    private let approvalRed = Color(red: 0.82, green: 0.25, blue: 0.25)
 
     private var permission: PermissionContext? {
         session.activePermission
@@ -23,31 +26,30 @@ struct ApprovalDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header with back button
-            header
-
             if let permission = permission {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Session info + source badges
-                        sessionInfo
+                // Session header row
+                sessionHeader
+                    .opacity(showContent ? 1 : 0)
+                    .offset(y: showContent ? 0 : -4)
 
-                        // Tool details card
-                        toolDetailCard(permission: permission)
-                    }
+                Spacer().frame(height: 12)
+
+                // Tool warning + command card
+                toolCard(permission: permission)
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
-                }
-                .opacity(showContent ? 1 : 0)
-                .offset(y: showContent ? 0 : 8)
+                    .opacity(showContent ? 1 : 0)
+                    .offset(y: showContent ? 0 : 8)
 
-                // 4 approval buttons at bottom
-                approvalButtons(permission: permission)
+                Spacer()
+
+                // 4 equal-width colored buttons at bottom
+                approvalButtons
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
                     .opacity(showButtons ? 1 : 0)
                     .offset(y: showButtons ? 0 : 10)
             } else {
-                // Permission was resolved while viewing
+                // Permission was resolved
                 VStack(spacing: 8) {
                     Image(systemName: "checkmark.circle")
                         .font(.system(size: 28))
@@ -68,7 +70,6 @@ struct ApprovalDetailView: View {
             }
         }
         .onReceive(sessionMonitor.$instances) { instances in
-            // Auto-navigate back when permission is resolved
             if let updated = instances.first(where: { $0.sessionId == session.sessionId }) {
                 if !updated.phase.isWaitingForApproval {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -81,119 +82,118 @@ struct ApprovalDetailView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Session Header (matching screenshot: project · title, badges on right)
 
-    @State private var isHeaderHovered = false
+    private var sessionHeader: some View {
+        HStack(spacing: 8) {
+            // Crab icon + session title
+            ClaudeCrabIcon(size: 14, animateLegs: true)
 
-    private var header: some View {
-        Button {
-            viewModel.contentType = .instances
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.6))
-                    .frame(width: 24, height: 24)
-
+            VStack(alignment: .leading, spacing: 1) {
                 Text(session.displayTitle)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.85))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
                     .lineLimit(1)
 
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isHeaderHovered ? Color.white.opacity(0.08) : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { isHeaderHovered = $0 }
-    }
-
-    // MARK: - Session Info
-
-    private var sessionInfo: some View {
-        HStack(spacing: 6) {
-            // Source badge
-            if session.source != .claude {
-                Text(session.source.displayName)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-
-            // Terminal badge
-            if let termName = session.terminalAppName {
-                HStack(spacing: 3) {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 8, weight: .medium))
-                    Text(termName)
-                        .font(.system(size: 10, weight: .medium))
+                if let userMessage = session.firstUserMessage {
+                    Text(String(localized: "instances.user_prefix") + " " + userMessage)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.4))
+                        .lineLimit(1)
                 }
-                .foregroundColor(.white.opacity(0.5))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.white.opacity(0.06))
-                .clipShape(Capsule())
             }
 
             Spacer()
 
-            // Waiting indicator
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(TerminalColors.amber)
-                    .frame(width: 6, height: 6)
-                Text(String(localized: "instances.approval_needed"))
-                    .font(.system(size: 10))
-                    .foregroundColor(TerminalColors.amber.opacity(0.8))
+            // Right-side badges: source, terminal, time
+            HStack(spacing: 5) {
+                Text(session.source.displayName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(Capsule())
+
+                if let termName = session.terminalAppName {
+                    Text(termName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Capsule())
+                }
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
     }
 
-    // MARK: - Tool Detail Card
+    // MARK: - Tool Card (warning icon + command block + description)
 
-    private func toolDetailCard(permission: PermissionContext) -> some View {
+    private func toolCard(permission: PermissionContext) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Tool name header
-            HStack(spacing: 8) {
-                Image(systemName: toolIcon(for: permission.toolName))
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(TerminalColors.amber)
+            // Warning triangle + tool name
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(claudeOrange)
 
                 Text(MCPToolFormatter.formatToolName(permission.toolName))
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    .foregroundColor(TerminalColors.amber)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(claudeOrange)
             }
 
-            // Tool input details
+            // Command block
             if let input = permission.toolInput {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(input.keys.sorted()), id: \.self) { key in
+                    // Show command (for Bash) or key-value pairs
+                    if let command = input["command"] {
+                        commandBlock(formatValue(command))
+                    }
+
+                    // Show description if available
+                    if let desc = input["description"] {
+                        Text(formatValue(desc))
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.5))
+                            .padding(.top, 2)
+                    }
+
+                    // Show other keys (file_path, etc.) excluding command/description
+                    ForEach(Array(input.keys.sorted().filter { $0 != "command" && $0 != "description" }), id: \.self) { key in
                         toolInputRow(key: key, value: input[key]!)
                     }
                 }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.white.opacity(0.04))
-                )
             }
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(TerminalColors.amber.opacity(0.15), lineWidth: 1)
-                )
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+
+    // MARK: - Command Block ($ command style)
+
+    private func commandBlock(_ command: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("$")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundColor(.white.opacity(0.35))
+
+            Text(command)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(.white.opacity(0.75))
+                .lineLimit(5)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.04))
         )
     }
 
@@ -205,7 +205,6 @@ struct ApprovalDetailView: View {
 
             let stringValue = formatValue(value)
             if isMultilineContent(stringValue) {
-                // Show as code block with line numbers
                 codePreview(stringValue)
             } else {
                 Text(stringValue)
@@ -251,70 +250,66 @@ struct ApprovalDetailView: View {
         )
     }
 
-    // MARK: - Approval Buttons
+    // MARK: - Approval Buttons (4 equal-width, colored per screenshot)
 
-    private func approvalButtons(permission: PermissionContext) -> some View {
-        VStack(spacing: 8) {
-            Divider()
-                .background(Color.white.opacity(0.1))
-
-            // 4 equal-width buttons
-            HStack(spacing: 6) {
-                Button {
-                    sessionMonitor.denyPermission(sessionId: session.sessionId, reason: nil)
-                } label: {
-                    Text(String(localized: "instances.deny"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    sessionMonitor.approvePermission(sessionId: session.sessionId)
-                } label: {
-                    Text(String(localized: "instances.allow_once"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    sessionMonitor.alwaysAllowPermission(sessionId: session.sessionId)
-                } label: {
-                    Text(String(localized: "instances.always_allow"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.25))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    sessionMonitor.autoApprovePermission(sessionId: session.sessionId)
-                } label: {
-                    Text(String(localized: "instances.auto_approve"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.9))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
+    private var approvalButtons: some View {
+        HStack(spacing: 8) {
+            // Deny — dark gray
+            Button {
+                sessionMonitor.denyPermission(sessionId: session.sessionId, reason: nil)
+            } label: {
+                Text(String(localized: "instances.deny"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.8))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
+            .buttonStyle(.plain)
+
+            // Allow Once — lighter gray
+            Button {
+                sessionMonitor.approvePermission(sessionId: session.sessionId)
+            } label: {
+                Text(String(localized: "instances.allow_once"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(0.18))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+
+            // Always Allow — blue
+            Button {
+                sessionMonitor.alwaysAllowPermission(sessionId: session.sessionId)
+            } label: {
+                Text(String(localized: "instances.always_allow"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(approvalBlue)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+
+            // Bypass — red
+            Button {
+                sessionMonitor.autoApprovePermission(sessionId: session.sessionId)
+            } label: {
+                Text(String(localized: "instances.auto_approve"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(approvalRed)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
     // MARK: - Helpers
