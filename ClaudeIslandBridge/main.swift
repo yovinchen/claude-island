@@ -166,6 +166,9 @@ let client = SocketClient(path: socketPath)
 
 if PermissionHandler.isPermissionRequest(payload: payload) {
     PermissionHandler.handle(client: client, data: payloadData)
+} else if PermissionHandler.isImplicitPermissionRequest(payload: payload) {
+    // Qoder/CodeBuddy: PreToolUse on dangerous tools acts as implicit permission request
+    PermissionHandler.handleImplicit(client: client, payload: payload)
 } else {
     client.send(data: payloadData)
 }

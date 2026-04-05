@@ -573,6 +573,8 @@ class HookSocketServer {
             return buildHookSpecificOutputResponse(decision: decision, reason: reason, alwaysAllow: alwaysAllow, allowAll: allowAll, autoApprove: autoApprove, toolName: toolName)
         } else if source == .cursor {
             return buildCursorResponse(decision: decision, alwaysAllow: alwaysAllow)
+        } else if source == .qoder || source == .codebuddy || source == .codexCLI {
+            return buildPreToolUsePermissionResponse(decision: decision, reason: reason)
         } else {
             let response = HookResponse(decision: decision, reason: reason)
             return try? JSONEncoder().encode(response)
@@ -597,6 +599,22 @@ class HookSocketServer {
         }
 
         return try? JSONSerialization.data(withJSONObject: response, options: [])
+    }
+
+    /// Build Qoder/CodeBuddy PreToolUse permission response format.
+    /// These CLIs use PreToolUse's `permissionDecision` field instead of a dedicated PermissionRequest event.
+    /// Expected format:
+    /// { "hookSpecificOutput": { "hookEventName": "PreToolUse", "permissionDecision": "allow|deny", "permissionDecisionReason": "..." } }
+    private func buildPreToolUsePermissionResponse(decision: String, reason: String?) -> Data? {
+        let hookSpecificOutput: [String: Any] = [
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision == "allow" ? "allow" : "deny",
+            "permissionDecisionReason": reason ?? (decision == "allow" ? "Approved by user" : "Denied by user")
+        ]
+        let responseDict: [String: Any] = [
+            "hookSpecificOutput": hookSpecificOutput
+        ]
+        return try? JSONSerialization.data(withJSONObject: responseDict, options: [])
     }
 
     /// Build hookSpecificOutput format for Claude Code-compatible CLIs
