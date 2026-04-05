@@ -73,3 +73,19 @@
 | StatusLine | ✅ | ❌ |
 | exit code 2 | 不使用 | 支持阻塞模式 |
 | 配置目录 | `~/.claude` | `~/.factory` |
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高
+
+**本地代码复核结果**
+- 这份文档最明显过时。当前 `DroidHookSource` 已经在 `droidEvents` 中注册了 `PermissionRequest`，`HookSocketServer.hookSpecificOutputSources` 也已包含 `.droid`。
+- 这意味着 Droid 的 Notch 审批链路在本地代码里已经贯通，剩余问题不是“有没有 PermissionRequest”，而是 exit code 2 和文档/README 同步。
+- `HookInstaller`、UI 列表、RepairManager 已都包含 `.droid`，新增工作量很小。
+
+**最小实现方案**
+1. 更新文档正文，把“缺 PermissionRequest”改成“已实现，但还可增强 exit code 2”。
+2. 如果确实要利用 Droid 的阻塞语义，再在 bridge 层补 deny 时的进程退出码。
+
+**主要阻塞**
+- 当前主要是文档债，不是代码骨架缺失。

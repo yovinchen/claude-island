@@ -52,3 +52,20 @@ Cursor only provides `conversation_id` in `beforeSubmitPrompt`. Other events hav
 - The `version: 1` field in the config is required
 - Hook commands receive JSON via stdin and write JSON to stdout
 - If a hook command fails or times out, Cursor continues with default behavior
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高（配置/UI） / 中（会话连续性）
+
+**本地代码复核结果**
+- `CursorHookSource` 已经是独立自定义安装器，`EventMapper.applyCursorFields()` 也单独处理了 `beforeShellExecution`、`beforeMCPExecution`、`afterFileEdit` 等字段。
+- `HookSocketServer.buildCursorResponse()` 已实现 Cursor 的 `{continue, permission}` 返回，审批链路已具备。
+- 当前最大缺口不在响应格式，而在项目级 `.cursor/hooks.json`、附加字段展示、以及“非 prompt 事件缺少 conversation_id”带来的会话串联精度。
+
+**最小实现方案**
+1. 扩展 `managedConfigPaths`，把项目级 `.cursor/hooks.json` 纳入安装与自动修复。
+2. 在 `HookEvent` / UI 中增加 `attachments`、`edits` 的展示字段。
+3. 保留现有 conversation cache，同时评估是否用 cwd + pid 强化 Cursor 会话连续性。
+
+**主要阻塞**
+- Cursor 某些事件天生不带稳定会话 ID，这不是本地代码缺少功能，而是上游协议限制。

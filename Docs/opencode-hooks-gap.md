@@ -91,3 +91,20 @@ catch (e) {
 | 热重载 | ✅ | 需重启 OpenCode |
 | StatusLine | ✅ | ❌ |
 | 工具结果 | PostToolUse 含 tool_response | ❌ 未提取 |
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高（插件改造） / 低（审批）
+
+**本地代码复核结果**
+- `OpenCodeHookSource.install()` 当前直接生成 JS 插件，且已经用 `execSync(..., { input })` 避开了旧版 shell 注入问题。
+- 插件里已经写入 `tool_response: tool?.result || tool?.output`，因此文档前文关于“工具结果未提取”的描述已部分过时。
+- 本地仍然没有独立的权限请求回调；`HookSocketServer` 无法凭空把 OpenCode 变成可审批 source。
+
+**最小实现方案**
+1. 把本文前半部分与当前插件脚本同步，去掉已解决的注入风险描述。
+2. 在 JS 插件里继续补充更多 tool/result 字段，必要时带上错误日志。
+3. 维持 OpenCode 为“只读监控 source”，不要把 Notch 审批作为近期目标。
+
+**主要阻塞**
+- 阻塞不在本地代码，而在 OpenCode 插件 API 没有权限前置事件。

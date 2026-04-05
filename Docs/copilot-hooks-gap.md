@@ -149,3 +149,20 @@ GitHub Copilot CLI（2026-02 GA）官方支持以下 Hook 事件：
 4. **P2**: 注册 `preCompact` → 追踪上下文压缩
 5. **P2**: 实现 preToolUse stdout 返回通道 → 支持工具拦截
 6. **P3**: 支持项目级 `.github/hooks/` 配置注入
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 中高
+
+**本地代码复核结果**
+- 这份文档也有部分过时。当前 `CopilotHookSource` 已注册 `postToolUseFailure`、`errorOccurred`、`preCompact`、`notification` 等更多事件。
+- `EventMapper` 已能识别 `errorOccurred`、`postToolUseFailure` 等别名，事件归一化不是主要问题。
+- 真正缺的仍是 Copilot 专用的审批响应通道，因为 `HookSocketServer.buildResponseData()` 目前没有 `.copilot` 分支。
+
+**最小实现方案**
+1. 以当前 `CopilotHookSource` 为基线，更新本文已有事件列表。
+2. 在 `HookSocketServer` 增加 Copilot stdout 响应格式分支。
+3. 若要支持项目级 `.github/hooks/`，补 `managedConfigPaths`、安装选择逻辑和自动修复名单。
+
+**主要阻塞**
+- Copilot 的剩余工作集中在响应协议和多层配置，不在 installer 骨架；骨架已经有了。

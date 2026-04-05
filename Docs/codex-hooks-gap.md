@@ -194,3 +194,20 @@ notify = ["command", "arg1", "arg2"]
 3. **中**: 注册 Stop 为 hooks.json 事件（补充 notify 不足）
 4. **低**: Desktop transcript 完整解析
 5. **低**: notify payload 元数据提取
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高
+
+**本地代码复核结果**
+- 这份 gap 文档已有部分过时。当前 `CodexHookSource.events` 已经注册 `PreToolUse`、`PostToolUse`、`Stop`。
+- `PermissionHandler.isImplicitPermissionRequest()` 已把 `codex` 的危险 `PreToolUse` 视为隐式审批请求，`HookSocketServer.buildResponseData()` 也已为 `.codexCLI` 走 `permissionDecision` 返回。
+- 剩余真正未完成的重点，已经从“有没有 hooks”转成“CLI stdout 协议是否完全对齐”和“Desktop transcript 能否做更细粒度解析”。
+
+**最小实现方案**
+1. 校正本文上半部分的旧结论，以当前代码为准。
+2. 针对 Codex CLI 再核一遍 stdout 响应字段与 exit code 语义。
+3. 扩展 Desktop transcript watcher，把 `function_call` / `function_result` 级事件映射进统一协议。
+
+**主要阻塞**
+- Codex Desktop 不是 installer 问题，而是 watcher 质量问题；需要改 transcript 解析逻辑，不是只改 `HookInstaller`。

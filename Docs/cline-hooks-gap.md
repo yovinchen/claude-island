@@ -35,3 +35,19 @@
 ## 结论
 
 Cline / Cline CLI **官方 hooks 已存在，但 Claude Island 当前未接入**。这是明确的功能缺口。
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 中高
+
+**可直接复用**
+- 若 Cline 采用 shell-command + stdin/stdout 协议，可直接复用 `CursorHookSource` / `CopilotHookSource` 这类自定义 source 模式。
+- `PermissionHandler` 的隐式审批思路也能复用到 `PreToolUse.permissionDecision` 风格。
+
+**最小实现方案**
+1. 先确认 Cline CLI 与扩展是否同构；若不同，优先接 CLI。
+2. 新增单独的 `ClineHookSource`，不要强行套 `GenericSettingsHookSource`，直到配置格式完全确认。
+3. 第一阶段只做监控，第二阶段再决定是否接审批。
+
+**主要阻塞**
+- 当前阻塞是 schema 细节不明确，不是本地架构能力不足。

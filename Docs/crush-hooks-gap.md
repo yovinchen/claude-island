@@ -27,3 +27,17 @@
 ## 结论
 
 Crush **当前不支持接入**。公开资料显示它有 MCP、权限和命令扩展，但没有现成的本地 hooks 配置面可复用。
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 低（hooks） / 中（CLI 包装/MCP）
+
+**可直接复用**
+- 若改走 CLI 包装或 session watcher，可以复用统一 `HookEvent` 消费端；`HookInstaller` 不适合直接接 Crush。
+
+**可实施方案**
+1. 优先调查 Crush 是否有可读的 session/state 文件。
+2. 如果没有，再考虑命令包装器，把 MCP/permission 事件转成 Claude Island 统一协议。
+
+**主要阻塞**
+- 当前没有官方本地 hooks 配置面，意味着任何接入都不是“低成本新增 source”。

@@ -29,3 +29,17 @@
 ## 结论
 
 JetBrains **当前不是已支持的 hooks 接入对象**，但已经被本仓库当作“可聚焦的 IDE 宿主”部分支持。若后续要做深度集成，优先级应放在 ACP，而不是假设 JetBrains 自身提供统一 hooks。
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 低（直接 hooks） / 中高（ACP 宿主）
+
+**可直接复用**
+- `SessionState`、`TerminalFocuser`、`TerminalAppRegistry` 已经覆盖多数 JetBrains bundle id，宿主定位已经存在。
+
+**可实施方案**
+1. 把 JetBrains 继续当宿主，不新增 `jetbrains` source。
+2. 如果未来要深度集成，优先接 ACP agent，把事件源落在底层 CLI，而不是 JetBrains 自身。
+
+**主要阻塞**
+- JetBrains 不是统一的事件提供者；没有稳定 hooks 面，就不应该强行抽象成独立 source。

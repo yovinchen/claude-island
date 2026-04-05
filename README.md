@@ -180,6 +180,51 @@ Claude Island App (NotchView)
 
 ### 支持的 AI 工具
 
+### 兼容性审计（2026-04-06）
+
+以下表格对应本次新增审计范围。`已接入` 代表仓库里已有 `SessionSource` / `HookSource` / README 说明；`部分支持` 代表只支持宿主识别、窗口聚焦或某一子形态；`未接入` 代表当前仓库没有正式集成。
+
+#### App / IDE
+
+| 对象 | 当前状态 | 说明 | 参考文档 |
+|------|----------|------|---------|
+| Warp | 未接入 | 仅作为宿主终端被识别，不是 Hook 接入源 | [docs/warp-hooks-gap.md](docs/warp-hooks-gap.md) |
+| Qoder | 已接入 | 当前实现更接近 IDE / extension hooks | [docs/qoder-hooks-gap.md](docs/qoder-hooks-gap.md) |
+| Antigravity | 未接入 | 未发现可直接复用的本地 hooks 面 | [docs/antigravity-hooks-gap.md](docs/antigravity-hooks-gap.md) |
+| Trae | 未接入 | 代码里有 `SessionSource.trae`，但显式标记为 unsupported | [docs/trae-hooks-gap.md](docs/trae-hooks-gap.md) |
+| Cursor | 已接入 | 已有 Cursor hooks 安装器与事件映射 | [docs/cursor-hooks-gap.md](docs/cursor-hooks-gap.md) |
+| Windsurf | 未接入 | 仅宿主终端识别；官方 hooks 已存在但仓库未接入 | [docs/windsurf-hooks-gap.md](docs/windsurf-hooks-gap.md) |
+| CodeBuddy | 已接入 | 已有 CodeBuddy settings hooks 支持 | [docs/codebuddy-hooks-gap.md](docs/codebuddy-hooks-gap.md) |
+| Kiro | 未接入 | 官方 IDE/CLI hooks 已有，仓库尚未接入 | [docs/kiro-hooks-gap.md](docs/kiro-hooks-gap.md) |
+| Lingma | 未接入 | 当前只找到 rules / custom-agent / MCP 路线 | [docs/lingma-hooks-gap.md](docs/lingma-hooks-gap.md) |
+
+#### CLI
+
+| 对象 | 当前状态 | 说明 | 参考文档 |
+|------|----------|------|---------|
+| Kimi CLI | 未接入 | 官方 hooks beta + ACP 已有，仓库未接入 | [docs/kimi-cli-hooks-gap.md](docs/kimi-cli-hooks-gap.md) |
+| Amp CLI | 未接入 | 官方更适合走 plugin API / permissions delegate / stream-json 路线 | [docs/amp-cli-hooks-gap.md](docs/amp-cli-hooks-gap.md) |
+| Qoder CLI | 未接入 | 当前 `qoder` 实现更偏 IDE hooks，不等同于 CLI | [docs/qoder-cli-hooks-gap.md](docs/qoder-cli-hooks-gap.md) |
+| Cline / Cline CLI | 未接入 | 官方 hooks 已有，仓库暂无 source | [docs/cline-hooks-gap.md](docs/cline-hooks-gap.md) |
+| Claude Code | 已接入 | 完整 hooks 管线已实现 | [docs/claude-hooks-gap.md](docs/claude-hooks-gap.md) |
+| Codex | 已接入 | CLI hooks + Desktop transcript watcher | [docs/codex-hooks-gap.md](docs/codex-hooks-gap.md) |
+| OpenCode | 已接入 | JS 插件桥接已实现 | [docs/opencode-hooks-gap.md](docs/opencode-hooks-gap.md) |
+| Gemini | 已接入 | 已接入，仍有 Gemini 专属 gap | [docs/gemini-hooks-gap.md](docs/gemini-hooks-gap.md) |
+| Pi (`@mariozechner/pi-coding-agent`) | 未接入 | 公开面更像 extension API，不是 hooks | [docs/pi-coding-agent-hooks-gap.md](docs/pi-coding-agent-hooks-gap.md) |
+| Droid | 已接入 | Factory settings hooks 已接入 | [docs/droid-hooks-gap.md](docs/droid-hooks-gap.md) |
+| Crush (`@charmland/crush`) | 未接入 | 当前只见 MCP / command / permission 扩展面 | [docs/crush-hooks-gap.md](docs/crush-hooks-gap.md) |
+
+#### VS 插件 / IDE 宿主
+
+| 对象 | 当前状态 | 说明 | 参考文档 |
+|------|----------|------|---------|
+| JetBrains | 部分支持 | 已支持窗口聚焦宿主识别，但不是 hooks source | [docs/jetbrains-hooks-gap.md](docs/jetbrains-hooks-gap.md) |
+| Droid 插件 | 部分支持 | Droid hooks 已接入，但未做 JetBrains/VS 插件专项适配说明 | [docs/droid-hooks-gap.md](docs/droid-hooks-gap.md) |
+| Claudix | 未接入 | 未找到稳定官方 hooks 文档 | [docs/claudix-hooks-gap.md](docs/claudix-hooks-gap.md) |
+| RooCode | 未接入 | 当前只见 modes / checkpoints / MCP | [docs/roocode-hooks-gap.md](docs/roocode-hooks-gap.md) |
+| Cline | 未接入 | 与 CLI 合并审计，当前暂无接入 | [docs/cline-hooks-gap.md](docs/cline-hooks-gap.md) |
+| Copilot | 部分支持 | Copilot CLI hooks 已接入，但 VS / JetBrains 插件未专项接入 | [docs/copilot-hooks-gap.md](docs/copilot-hooks-gap.md) |
+
 | 工具 | 配置文件 | 配置目录 | Hook 类型 | 注册事件数 | 权限超时 |
 |------|---------|---------|----------|-----------|---------|
 | **Claude Code** | `settings.json` | `~/.claude` | Bridge CLI (`command`) | 10 | 86400s (24h) |

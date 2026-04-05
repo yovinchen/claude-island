@@ -28,3 +28,17 @@
 ## 结论
 
 Roo Code **当前不支持接入**。官方现阶段公开的是 mode / checkpoint / MCP 等能力，而不是可直接写入的 hooks 规范。
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 低（hooks） / 中（watcher/MCP）
+
+**可直接复用**
+- 若未来走 MCP 或 checkpoint watcher，可以复用统一 `HookEvent` 消费端，但 installer 不适用。
+
+**可实施方案**
+1. 先观察 Roo Code 是否有稳定 checkpoint/session 文件。
+2. 如果有，再做 watcher，把 checkpoint/agent 状态转成统一事件。
+
+**主要阻塞**
+- 当前缺的不是 source 数量，而是 Roo Code 没有公开声明式 hooks 协议。

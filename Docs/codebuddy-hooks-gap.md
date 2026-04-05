@@ -122,3 +122,20 @@
 | exit code 语义 | 0/非0 | 0/1/2 (2=阻塞) |
 | 环境变量 | — | `CODEBUDDY_PROJECT_DIR`, `CLAUDE_PROJECT_DIR` |
 | 工具名别名 | CLI 名 (Bash, Write) | CLI 名 + IDE 名 (execute_command, write_to_file) |
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高
+
+**本地代码复核结果**
+- 文档前文把 `PreToolUse.permissionDecision` 视为未实现，但当前代码已经具备：`PermissionHandler` 会对 `codebuddy` 危险工具发起隐式审批，`HookSocketServer` 会返回 `permissionDecision`。
+- 现有架构已经足以支撑 CodeBuddy 的“单次审批”模式，不需要新建 source 类型。
+- 剩余差距主要集中在 `exit code 2`、`continue/suppressOutput`、`modifiedInput` 这类更细的控制能力。
+
+**最小实现方案**
+1. 先把文档里的旧 gap 标成“已部分关闭”。
+2. 在 bridge 层补 `deny -> exit 2`。
+3. 如果后续确实要支持 `modifiedInput`，需要先扩展 UI，让用户能修改参数，而不是只有 allow/deny。
+
+**主要阻塞**
+- `modifiedInput` 和 `additionalContext` 都不是 socket 协议问题，而是产品交互面目前没有对应输入入口。

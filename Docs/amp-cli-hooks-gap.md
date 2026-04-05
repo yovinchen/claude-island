@@ -47,3 +47,19 @@
 ## 结论
 
 Amp CLI **当前未接入**。官方有可用的 Plugin API、permissions delegate 和 JSON streaming，可作为 hooks 的替代实现，但不能直接复用现有 `HookInstaller` 的配置写入模式。
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 中高（plugin/stream） / 中（审批代理）
+
+**可直接复用**
+- `HookSocketServer`、`SessionStore`、UI 端都可以直接复用，只要 Amp 能输出统一 JSON 事件。
+- 如果走 `--stream-json`，甚至不一定要先做插件安装器。
+
+**最小实现方案**
+1. 第一阶段优先做 `--stream-json` watcher，快速验证事件密度和字段质量。
+2. 第二阶段再决定是插件路线还是 permissions delegate 路线。
+3. 如果走插件路线，需要新增 `.amp/plugins` 文件生成和启用检查，而不是改 `GenericSettingsHookSource`。
+
+**主要阻塞**
+- Amp 的问题不是事件协议没有，而是入口不是声明式 hooks；要先选 plugin 还是 stream。

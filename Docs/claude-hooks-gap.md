@@ -263,3 +263,20 @@ struct HookResponse: Codable {
 - Claude Code GitHub: https://github.com/anthropics/claude-code
 - Hook 开发技能: https://github.com/anthropics/claude-code/blob/main/plugins/plugin-dev/skills/hook-development/SKILL.md
 - v2.1.76 更新日志: https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高（补事件） / 中（新增交互类型）
+
+**本地代码复核结果**
+- `ClaudeHookSource.updateClaudeSettings()` 已集中管理 Claude 事件注册，因此 `Setup`、`PostCompact` 这类新增事件属于低成本补点。
+- `HookSocketServer.buildHookSpecificOutputResponse()` 已经有 Claude 专用审批返回结构，`PermissionRequest` 相关改动不需要新通道。
+- `EventMapper.normalizeEventName()` 仍未覆盖 `Setup`、`Elicitation`、`ElicitationResult`、`PostCompact`，这部分是当前最直接的缺口。
+
+**最小实现方案**
+1. 在 `ClaudeHookSource` 的 `hookEvents` 数组补注册新事件。
+2. 在 `EventMapper` 补别名映射与字段提取。
+3. 若要支持 `Elicitation`，需要把 `HookEvent` / `SessionStore` / UI 扩成“审批之外的第二类同步交互”。
+
+**主要阻塞**
+- `Elicitation` 不是现有 `PermissionRequest` 的同构问题，不能只改 installer；需要新增事件类型、状态机和响应 UI。

@@ -166,3 +166,20 @@
 | task | Task |
 | search_web | WebSearch |
 | fetch_content | WebFetch |
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高（审批） / 中（工具失败展示）
+
+**本地代码复核结果**
+- 文档中“PreToolUse 权限决策未实现”的结论已过时。`PermissionHandler.isImplicitPermissionRequest()` 已把 `qoder` 的危险工具调用视为隐式审批请求。
+- `HookSocketServer.buildResponseData()` 也已为 `.qoder` 返回 `hookSpecificOutput.permissionDecision`。
+- `EventMapper` 和 `SessionStore` 已识别 `PostToolUseFailure`，因此剩余问题主要是 UI 表达和 exit code 语义，而不是基础协议缺失。
+
+**最小实现方案**
+1. 同步本文旧结论，标明隐式审批链路已经存在。
+2. 在 bridge 侧补 `deny -> exit code 2`，让 Qoder 真正阻止动作。
+3. 在 UI 中强化 `PostToolUseFailure` 的错误展示，而不是只当普通 processing 事件。
+
+**主要阻塞**
+- `exit code 2` 需要改 bridge 进程退出行为，这会影响所有隐式审批源，不能只改文档层。

@@ -22,3 +22,19 @@
 ## 结论
 
 Gemini CLI **当前属于已支持对象**，但仍有 Gemini 专属事件与项目级配置覆盖问题待完善。详细设计与根因分析见 [gemini-hooks-design.md](./gemini-hooks-design.md)。
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高
+
+**可直接复用**
+- `GeminiHookSource` 已是单独安装器，`EventMapper` 也已有 Gemini 专属别名分支。
+- UI、repair、source 列表已完整包含 `.gemini`，后续只是在既有 source 上补事件。
+
+**最小实现方案**
+1. 继续补 `BeforeModel` / `AfterModel` / `BeforeToolSelection` 的映射与字段提取。
+2. 把项目级 `.gemini/settings.json` 纳入诊断或 `managedConfigPaths`。
+3. 保持 Gemini 为“无独立 PermissionRequest”的模型，不要勉强对齐 Claude。
+
+**主要阻塞**
+- 阻塞主要是 Gemini 事件语义与 Claude 不同，需要克制地做 source-aware 映射，不能走统一粗暴别名。
