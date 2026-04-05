@@ -1,0 +1,58 @@
+# Windsurf / Cascade Hooks — 差距分析
+
+> 官方 Hooks: https://docs.windsurf.com/windsurf/cascade/hooks
+> 官方下载页: https://windsurf.com/download
+> 分析日期: 2026-04-06
+
+## 当前仓库状态
+
+| 项目 | 状态 | 说明 |
+|------|------|------|
+| `SessionSource` / `HookSource` | ❌ | 当前没有 `windsurf` 接入源 |
+| 宿主终端识别 | ✅ | `TerminalAppRegistry` 已识别 `Windsurf` 名称和 `com.exafunction.windsurf` bundle id |
+| Hook 安装与事件映射 | ❌ | 无 `HookInstaller`、`EventMapper`、`HookSocketServer` 适配 |
+
+## 官方已提供的 Hook 能力
+
+| 能力 | 官方状态 | 说明 |
+|------|------|------|
+| Cascade Hooks | ✅ | 支持在 Cascade workflow 的关键节点执行 shell 命令 |
+| 输入协议 | ✅ | hook 通过 stdin 接收 JSON 上下文 |
+| 阻塞语义 | ✅ | pre-hook 可通过 exit code `2` 阻止动作 |
+| 多层配置 | ✅ | system / user / workspace 三级 `hooks.json` 合并 |
+| 企业分发 | ✅ | 官方支持 dashboard 与系统级文件下发 |
+
+## 与现有仓库的差距
+
+1. Windsurf 已经有成熟 hooks，但 Claude Island 还没有对应的 source、配置路径与安装器。
+2. 现有 `HookResponse` 模型未适配 Windsurf 的 pre-hook 阻塞语义。
+3. 需要补充 Windsurf 的事件名到统一事件的映射策略。
+4. 需要评估 Windsurf JetBrains 插件是否复用同一 hooks 面；当前公开 hooks 文档主要面向 Windsurf Editor / Cascade。
+
+## 实现建议
+
+1. 新增 `SessionSource.windsurf`、图标和安装检测。
+2. 实现 `WindsurfHookSource`，写入 user/workspace `hooks.json`。
+3. 在 `EventMapper` 里补齐 Cascade action 到 `SessionStart` / `PreToolUse` / `PostToolUse` / `Stop` 的归一化。
+4. 审批先做只读监控，再评估是否把 pre-hook exit code `2` 接到 Notch 审批。
+
+## 结论
+
+Windsurf **官方 hooks 能力已具备，但本仓库当前未接入**。这是一个高价值缺口，因为它和现有的 shell-command hook 模型相似，接入成本明显低于 Warp / Antigravity / Trae。
+
+## 基于本地代码的实现可行性
+
+**可行性评级**: 高
+
+**可直接复用**
+- `CursorHookSource` 可作为安装器模板，因为同样是独立 `hooks.json` 风格。
+- `EventMapper`、`HookSocketServer`、`PermissionHandler` 已有成熟的“自定义 source + 自定义返回格式”模式。
+- UI、repair、setup 列表已经有固定扩展点，新增 source 是机械工作。
+
+**最小实现方案**
+1. 新增 `SessionSource.windsurf` 和 `WindsurfHookSource`。
+2. 参照 Cursor 补 event -> 统一事件映射。
+3. 先做只读事件，再决定是否把 pre-hook 阻塞接到 Notch 审批。
+
+**主要阻塞**
+- 主要阻塞不在本地代码，而在还没有 Windsurf 的 source、图标、UI 列表与自动修复接线。

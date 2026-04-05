@@ -45,7 +45,10 @@ class HookFileWatcher {
         // Stop existing watchers
         stopWatching()
 
-        let managedSources: [SessionSource] = [.claude, .codexCLI, .gemini, .cursor, .opencode, .copilot]
+        let managedSources: [SessionSource] = [
+            .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot,
+            .qoder, .droid, .codebuddy
+        ]
 
         for source in managedSources {
             guard AppSettings.isHookEnabled(for: source) else { continue }
