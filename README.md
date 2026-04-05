@@ -193,17 +193,17 @@ Claude Island App (NotchView)
 | Antigravity | 未接入 | 未发现可直接复用的本地 hooks 面 | [docs/antigravity-hooks-gap.md](docs/antigravity-hooks-gap.md) |
 | Trae | 未接入 | 代码里有 `SessionSource.trae`，但显式标记为 unsupported | [docs/trae-hooks-gap.md](docs/trae-hooks-gap.md) |
 | Cursor | 已接入 | 已有 Cursor hooks 安装器与事件映射 | [docs/cursor-hooks-gap.md](docs/cursor-hooks-gap.md) |
-| Windsurf | 未接入 | 仅宿主终端识别；官方 hooks 已存在但仓库未接入 | [docs/windsurf-hooks-gap.md](docs/windsurf-hooks-gap.md) |
+| Windsurf | 已接入 | 已支持用户级 `hooks.json` 安装与基础事件映射，当前先做只读监控 | [docs/windsurf-hooks-gap.md](docs/windsurf-hooks-gap.md) |
 | CodeBuddy | 已接入 | 已有 CodeBuddy settings hooks 支持 | [docs/codebuddy-hooks-gap.md](docs/codebuddy-hooks-gap.md) |
-| Kiro | 未接入 | 官方 IDE/CLI hooks 已有，仓库尚未接入 | [docs/kiro-hooks-gap.md](docs/kiro-hooks-gap.md) |
+| Kiro | 部分支持 | 已提供 `claude-island` Kiro CLI 自定义 agent hooks 文件，需用户显式使用该 agent | [docs/kiro-hooks-gap.md](docs/kiro-hooks-gap.md) |
 | Lingma | 未接入 | 当前只找到 rules / custom-agent / MCP 路线 | [docs/lingma-hooks-gap.md](docs/lingma-hooks-gap.md) |
 
 #### CLI
 
 | 对象 | 当前状态 | 说明 | 参考文档 |
 |------|----------|------|---------|
-| Kimi CLI | 未接入 | 官方 hooks beta + ACP 已有，仓库未接入 | [docs/kimi-cli-hooks-gap.md](docs/kimi-cli-hooks-gap.md) |
-| Amp CLI | 未接入 | 官方更适合走 plugin API / permissions delegate / stream-json 路线 | [docs/amp-cli-hooks-gap.md](docs/amp-cli-hooks-gap.md) |
+| Kimi CLI | 已接入 | 已支持 `config.toml` hooks 安装与基础审批返回 | [docs/kimi-cli-hooks-gap.md](docs/kimi-cli-hooks-gap.md) |
+| Amp CLI | 部分支持 | 已支持全局 plugin 安装、基础事件桥接和危险工具审批；仍依赖 `PLUGINS=all amp` | [docs/amp-cli-hooks-gap.md](docs/amp-cli-hooks-gap.md) |
 | Qoder CLI | 未接入 | 当前 `qoder` 实现更偏 IDE hooks，不等同于 CLI | [docs/qoder-cli-hooks-gap.md](docs/qoder-cli-hooks-gap.md) |
 | Cline / Cline CLI | 未接入 | 官方 hooks 已有，仓库暂无 source | [docs/cline-hooks-gap.md](docs/cline-hooks-gap.md) |
 | Claude Code | 已接入 | 完整 hooks 管线已实现 | [docs/claude-hooks-gap.md](docs/claude-hooks-gap.md) |

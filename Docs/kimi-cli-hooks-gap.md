@@ -9,9 +9,9 @@
 
 | 项目 | 状态 | 说明 |
 |------|------|------|
-| `SessionSource` / `HookSource` | ❌ | 当前没有 Kimi CLI 接入源 |
-| 安装检测 | ❌ | 仓库未检查 `~/.kimi/config.toml` 或 `kimi` 命令 |
-| Hook / ACP 适配 | ❌ | 未支持 hooks，也未支持 `kimi acp` |
+| `SessionSource` / `HookSource` | ✅ | 当前已新增 `kimi_cli` source 与安装器 |
+| 安装检测 | ✅ | 已检测 `~/.kimi` 与常见 `kimi` 可执行路径 |
+| Hook / ACP 适配 | ⚠️ | hooks 已接入；ACP 仍未实现 |
 
 ## 官方已提供的 Hook 能力
 
@@ -37,7 +37,7 @@
 
 ## 结论
 
-Kimi CLI **官方 hooks 已经具备，且还有 ACP 作为替代实现**；Claude Island 当前未接入，是一个明确的功能缺口。
+Kimi CLI **现已完成 hooks 首版接入**。当前通过 `config.toml` 的受管 block 安装 hooks，并已接入基础审批返回；ACP 仍待后续阶段实现。
 
 ## 基于本地代码的实现可行性
 
@@ -48,9 +48,9 @@ Kimi CLI **官方 hooks 已经具备，且还有 ACP 作为替代实现**；Clau
 - `HookSocketServer` 里现成有多套返回协议分支，可以继续扩展 Kimi 的 stdout 响应格式。
 
 **最小实现方案**
-1. 先复用 Codex 的 TOML 操作模式，实现 `KimiHookSource`。
-2. 把 Kimi 事件映射进 `EventMapper`，优先覆盖 `SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PostToolUse` / `Stop`。
-3. ACP 单独作为第二阶段，不要和 hooks 首次接入耦合。
+1. 已复用 Codex 的 TOML 管理思路，实现 `KimiHookSource`。
+2. 已把 Kimi 事件接到 `EventMapper` / `PermissionHandler` / `HookSocketServer` 的隐式审批链路。
+3. ACP 继续单独作为第二阶段，不和 hooks 首版耦合。
 
 **主要阻塞**
-- 主要是配置格式和事件名对齐，不是架构阻塞；这是当前最容易落地的新 CLI 之一。
+- 当前主要阻塞只剩 ACP 路线，以及更完整的事件覆盖和真实联调验证。

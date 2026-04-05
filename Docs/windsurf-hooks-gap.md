@@ -8,9 +8,9 @@
 
 | 项目 | 状态 | 说明 |
 |------|------|------|
-| `SessionSource` / `HookSource` | ❌ | 当前没有 `windsurf` 接入源 |
+| `SessionSource` / `HookSource` | ✅ | 当前已新增 `windsurf` source 与安装器 |
 | 宿主终端识别 | ✅ | `TerminalAppRegistry` 已识别 `Windsurf` 名称和 `com.exafunction.windsurf` bundle id |
-| Hook 安装与事件映射 | ❌ | 无 `HookInstaller`、`EventMapper`、`HookSocketServer` 适配 |
+| Hook 安装与事件映射 | ✅ | 已支持用户级 `hooks.json` 安装、基础事件映射与 UI/repair/watcher 接线 |
 
 ## 官方已提供的 Hook 能力
 
@@ -38,7 +38,7 @@
 
 ## 结论
 
-Windsurf **官方 hooks 能力已具备，但本仓库当前未接入**。这是一个高价值缺口，因为它和现有的 shell-command hook 模型相似，接入成本明显低于 Warp / Antigravity / Trae。
+Windsurf **现已完成首版接入**。当前版本先覆盖用户级 hooks 安装和基础状态追踪，审批仍保留在后续阶段。
 
 ## 基于本地代码的实现可行性
 
@@ -50,9 +50,9 @@ Windsurf **官方 hooks 能力已具备，但本仓库当前未接入**。这是
 - UI、repair、setup 列表已经有固定扩展点，新增 source 是机械工作。
 
 **最小实现方案**
-1. 新增 `SessionSource.windsurf` 和 `WindsurfHookSource`。
-2. 参照 Cursor 补 event -> 统一事件映射。
-3. 先做只读事件，再决定是否把 pre-hook 阻塞接到 Notch 审批。
+1. 已新增 `SessionSource.windsurf` 和 `WindsurfHookSource`。
+2. 已补基础 event -> 统一事件映射。
+3. 下一步再决定是否把 pre-hook 阻塞接到 Notch 审批。
 
 **主要阻塞**
-- 主要阻塞不在本地代码，而在还没有 Windsurf 的 source、图标、UI 列表与自动修复接线。
+- 当前主要阻塞已经从“没有 source”转成“是否要支持审批返回和更多 Windsurf 事件类型”。

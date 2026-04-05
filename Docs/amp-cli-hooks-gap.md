@@ -9,9 +9,9 @@
 
 | 项目 | 状态 | 说明 |
 |------|------|------|
-| `SessionSource` / `HookSource` | ❌ | 当前没有 Amp CLI 接入源 |
-| 安装检测 | ❌ | 仓库未检测 `amp` 命令或 `~/.config/amp/settings.json` |
-| Hook / Plugin 适配 | ❌ | 未支持 Amp 的 plugin API、权限代理或 JSON stream |
+| `SessionSource` / `HookSource` | ⚠️ | 当前已新增 `amp_cli` source，并生成全局 plugin 文件 |
+| 安装检测 | ✅ | 已检测 `~/.config/amp` 与常见 `amp` 可执行路径 |
+| Hook / Plugin 适配 | ⚠️ | 已支持 plugin API 首版桥接；`stream-json` watcher 仍未实现 |
 
 ## 官方可用扩展面
 
@@ -46,7 +46,7 @@
 
 ## 结论
 
-Amp CLI **当前未接入**。官方有可用的 Plugin API、permissions delegate 和 JSON streaming，可作为 hooks 的替代实现，但不能直接复用现有 `HookInstaller` 的配置写入模式。
+Amp CLI **当前处于部分支持状态**。本仓库已能安装全局 plugin，并把 `session.start / agent.start / tool.call / tool.result / agent.end` 桥接到 Claude Island；但仍依赖用户以 `PLUGINS=all amp` 方式运行。
 
 ## 基于本地代码的实现可行性
 
@@ -57,9 +57,9 @@ Amp CLI **当前未接入**。官方有可用的 Plugin API、permissions delega
 - 如果走 `--stream-json`，甚至不一定要先做插件安装器。
 
 **最小实现方案**
-1. 第一阶段优先做 `--stream-json` watcher，快速验证事件密度和字段质量。
-2. 第二阶段再决定是插件路线还是 permissions delegate 路线。
-3. 如果走插件路线，需要新增 `.amp/plugins` 文件生成和启用检查，而不是改 `GenericSettingsHookSource`。
+1. 已实现全局 `.config/amp/plugins/claude-island.ts` 生成。
+2. 当前 plugin 已接入基础事件与危险工具审批。
+3. 下一步仍建议补 `--stream-json` watcher，用于无 plugin 模式或更稳定的会话分组。
 
 **主要阻塞**
-- Amp 的问题不是事件协议没有，而是入口不是声明式 hooks；要先选 plugin 还是 stream。
+- 当前主要阻塞是 Amp plugin API 对线程/session 标识暴露有限，因此首版会话分组更偏“每个 CLI 进程一个 session”。

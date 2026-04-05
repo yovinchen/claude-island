@@ -40,18 +40,23 @@ GitHub Copilot CLI（2026-02 GA）官方支持以下 Hook 事件：
 
 ## 尚未实现
 
-### 1. PermissionRequest 事件 (高优先级)
+### 1. `preToolUse` 审批流（已补首版）
 
-**官方行为**: Copilot CLI 已支持 `PermissionRequest` Hook，脚本可通过 stdout 返回 JSON 来程序化审批或拒绝工具权限请求。
+**官方行为**: Copilot CLI 通过 `preToolUse` 的 stdout JSON 返回 `permissionDecision`，而不是 Claude 风格的独立 `PermissionRequest` 事件。
 
-**当前行为**: 未注册该事件。Copilot 会话不支持 Notch 审批流。
+**当前行为**: 当前代码已把危险 `preToolUse` 识别为隐式审批请求，并返回 Copilot 风格的平铺 JSON：
 
-**影响**: 无法通过 ClaudeIsland UI 审批 Copilot 的权限请求，用户仍需在终端手动操作。
+```json
+{
+  "permissionDecision": "allow|deny",
+  "permissionDecisionReason": "..."
+}
+```
 
-**改进方案**:
-1. 在 `CopilotHookSource.install()` 的事件列表中添加 `"PermissionRequest"`
-2. EventMapper 已有 `permissionrequest` → `PermissionRequest` 映射，无需额外修改
-3. 需要实现 socket 通道以支持双向审批通信
+**当前限制**:
+1. 仅对高风险工具触发 Notch 审批
+2. 仍未实现 `modifiedArgs`
+3. 还未做真实 CLI 端联调验证
 
 ---
 
@@ -143,26 +148,25 @@ GitHub Copilot CLI（2026-02 GA）官方支持以下 Hook 事件：
 
 ## 推荐改进优先级
 
-1. **P0**: 注册 `PermissionRequest` 事件 + 实现 socket 审批通道 → 解锁 Notch 审批能力
-2. **P1**: 注册 `postToolUseFailure` + `errorOccurred` → 完善错误监控
-3. **P1**: 验证 `stop` 事件是否被 Copilot CLI 实际触发
-4. **P2**: 注册 `preCompact` → 追踪上下文压缩
-5. **P2**: 实现 preToolUse stdout 返回通道 → 支持工具拦截
-6. **P3**: 支持项目级 `.github/hooks/` 配置注入
+1. **P1**: 实测验证 `preToolUse` 的审批返回是否与 Copilot CLI 完全一致
+2. **P1**: 验证 `stop` 事件是否被 Copilot CLI 实际触发
+3. **P2**: 实现 `modifiedArgs`
+4. **P2**: 支持项目级 `.github/hooks/` 配置注入
 
 ## 基于本地代码的实现可行性
 
-**可行性评级**: 中高
+**可行性评级**: 高
 
 **本地代码复核结果**
 - 这份文档也有部分过时。当前 `CopilotHookSource` 已注册 `postToolUseFailure`、`errorOccurred`、`preCompact`、`notification` 等更多事件。
 - `EventMapper` 已能识别 `errorOccurred`、`postToolUseFailure` 等别名，事件归一化不是主要问题。
-- 真正缺的仍是 Copilot 专用的审批响应通道，因为 `HookSocketServer.buildResponseData()` 目前没有 `.copilot` 分支。
+- 当前代码已经新增 `.copilot` 专用审批响应分支，并通过危险 `preToolUse` 走隐式审批。
+- 剩余问题从“有没有审批通道”变成“响应字段是否完全与官方 CLI 对齐”。
 
 **最小实现方案**
-1. 以当前 `CopilotHookSource` 为基线，更新本文已有事件列表。
-2. 在 `HookSocketServer` 增加 Copilot stdout 响应格式分支。
+1. 以当前 `CopilotHookSource` + 隐式审批为基线，完成 CLI 联调。
+2. 如有需要，再补 `modifiedArgs`。
 3. 若要支持项目级 `.github/hooks/`，补 `managedConfigPaths`、安装选择逻辑和自动修复名单。
 
 **主要阻塞**
-- Copilot 的剩余工作集中在响应协议和多层配置，不在 installer 骨架；骨架已经有了。
+- Copilot 的剩余工作集中在联调和项目级配置，不在 installer 骨架；骨架已经有了。
