@@ -44,8 +44,11 @@ struct HookInstaller {
         QoderHookSource(),
         DroidHookSource(),
         CodeBuddyHookSource(),
-        TraeHookSource()
+        // TraeHookSource() — Trae 暂不支持 Hooks API，待官方适配后启用
     ]
+
+    /// Sources that are detected but not yet supported (no Hooks API)
+    static let unsupportedSources: Set<SessionSource> = [.trae]
 
     /// Get bridge path for internal use (may contain spaces, not for hook commands)
     static func bridgePath() -> String {
@@ -226,10 +229,10 @@ struct HookInstaller {
             installed.append(.codebuddy)
         }
 
-        // Trae: check ~/.trae
-        if fm.fileExists(atPath: "\(home)/.trae") {
-            installed.append(.trae)
-        }
+        // Trae: 暂不支持 Hooks API，不检测
+        // if fm.fileExists(atPath: "\(home)/.trae") {
+        //     installed.append(.trae)
+        // }
 
         return installed
     }

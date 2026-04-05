@@ -251,7 +251,7 @@ struct SettingsHookList: View {
 
     private let sources: [SessionSource] = [
         .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot,
-        .qoder, .droid, .codebuddy, .trae
+        .qoder, .droid, .codebuddy
     ]
 
     var body: some View {

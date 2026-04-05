@@ -20,7 +20,7 @@ struct HookSetupView: View {
 
     private let allTools: [SessionSource] = [
         .claude, .codexCLI, .gemini, .cursor, .opencode, .copilot,
-        .qoder, .droid, .codebuddy, .trae
+        .qoder, .droid, .codebuddy
     ]
 
     var body: some View {
