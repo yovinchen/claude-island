@@ -8,6 +8,7 @@
 //  Usage:
 //    claude-island-bridge --source claude   # Claude Code hook
 //    claude-island-bridge --source codex    # Codex CLI hook
+//    claude-island-bridge --source codex_notify '{...}'  # Codex notify
 //    claude-island-bridge --source gemini   # Gemini CLI hook
 //    claude-island-bridge --source cursor --event beforeShellExecution  # Cursor hook
 //    claude-island-bridge --source copilot  # Copilot hook
@@ -38,6 +39,74 @@ func parseEvent() -> String? {
     return nil
 }
 
+/// Parse the first non-option positional argument.
+/// Codex `notify = [...]` passes the JSON payload as an argv item rather than stdin.
+func parsePayloadArgument() -> String? {
+    let args = CommandLine.arguments
+    var index = 1
+
+    while index < args.count {
+        switch args[index] {
+        case "--source", "--event":
+            index += 2
+        default:
+            if args[index].hasPrefix("--") {
+                index += 1
+            } else {
+                return args[index]
+            }
+        }
+    }
+
+    return nil
+}
+
+func readInputData(preferArgument: Bool) -> Data? {
+    if preferArgument, let payload = parsePayloadArgument() {
+        return payload.data(using: .utf8)
+    }
+
+    let stdinData = FileHandle.standardInput.availableData
+    if !stdinData.isEmpty {
+        return stdinData
+    }
+
+    guard !preferArgument, let payload = parsePayloadArgument() else {
+        return nil
+    }
+
+    return payload.data(using: .utf8)
+}
+
+func forwardCodexNotifyChain(rawPayload: String) {
+    let chainURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".codex/claude-island/notify-chain.json")
+
+    guard let data = try? Data(contentsOf: chainURL),
+          let command = try? JSONSerialization.jsonObject(with: data) as? [String],
+          let executable = command.first,
+          !executable.isEmpty else {
+        return
+    }
+
+    let expandedExecutable = NSString(string: executable).expandingTildeInPath
+    let extraArguments = Array(command.dropFirst()) + [rawPayload]
+    let process = Process()
+    process.standardInput = nil
+    process.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
+    process.standardError = FileHandle(forWritingAtPath: "/dev/null")
+
+    if expandedExecutable.contains("/") {
+        process.executableURL = URL(fileURLWithPath: expandedExecutable)
+        process.arguments = extraArguments
+    } else {
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [expandedExecutable] + extraArguments
+    }
+
+    try? process.run()
+}
+
 // MARK: - Main
 
 let source = parseSource()
@@ -45,10 +114,15 @@ let eventOverride = parseEvent()
 let ttyPath = TTYDetector.detectTTY()
 let ppid = ProcessInfo.processInfo.processIdentifier
 
-// Read stdin
-let inputData = FileHandle.standardInput.availableData
-guard !inputData.isEmpty else {
+guard let inputData = readInputData(preferArgument: source == "codex_notify"),
+      !inputData.isEmpty else {
     exit(0)
+}
+
+let rawPayload = String(data: inputData, encoding: .utf8)
+
+if source == "codex_notify", let rawPayload, !rawPayload.isEmpty {
+    forwardCodexNotifyChain(rawPayload: rawPayload)
 }
 
 guard var inputJSON = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any] else {
