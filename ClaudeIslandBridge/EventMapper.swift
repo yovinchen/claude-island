@@ -10,6 +10,11 @@ import Foundation
 
 enum EventMapper {
 
+    // MARK: - Cursor Session Cache
+    /// Cache the most recent Cursor conversation_id for session continuity.
+    /// Cursor only provides conversation_id in beforeSubmitPrompt; other events lack a session ID.
+    private static var cursorSessionCache: (conversationId: String, timestamp: Date)?
+
     /// Map raw hook input into the unified protocol format
     static func map(input: [String: Any], source: String, tty: String?, ppid: Int) -> [String: Any] {
         let eventName = extractEventName(from: input)
@@ -242,6 +247,10 @@ enum EventMapper {
             "usermessage": "UserPromptSubmit",
             "taskcomplete": "Stop",
             "agentturncomplete": "Stop",
+            // Copilot-specific aliases
+            "tooluse": "PreToolUse",
+            "userpromptsubmitted": "UserPromptSubmit",
+            "pretooluse": "PreToolUse",
             // Cursor-specific events
             "beforesubmitprompt": "UserPromptSubmit",
             "beforeshellexecution": "PermissionRequest",
@@ -329,6 +338,8 @@ enum EventMapper {
             // Use conversation_id as session_id for better session grouping
             if let convId = input["conversation_id"] as? String {
                 payload["session_id"] = convId
+                // Cache for other Cursor events that lack conversation_id
+                cursorSessionCache = (convId, Date())
             }
 
         case "stop":
@@ -344,6 +355,20 @@ enum EventMapper {
         if (payload["cwd"] as? String)?.isEmpty == true,
            let roots = input["workspace_roots"] as? [String], let first = roots.first {
             payload["cwd"] = first
+        }
+
+        // Cursor session continuity: fallback to cached conversation_id (1h TTL)
+        if let sid = payload["session_id"] as? String, sid == "unknown",
+           let cached = cursorSessionCache,
+           Date().timeIntervalSince(cached.timestamp) < 3600 {
+            payload["session_id"] = cached.conversationId
+        }
+
+        // Extract edit details from afterFileEdit for richer UI
+        if key == "afterfileedit",
+           let edits = input["edits"] as? [[String: Any]], let first = edits.first,
+           let oldStr = first["old_string"] as? String {
+            payload["tool_response"] = "Changed: \(String(oldStr.prefix(100)))"
         }
     }
 
