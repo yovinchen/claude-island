@@ -652,14 +652,15 @@ class CodexSessionWatcher {
     }
 
     private func tokenCountSummary(from payload: [String: Any]) -> String? {
-        guard let rateLimits = payload["rate_limits"] as? [String: Any] else {
-            return nil
-        }
+        let rateLimits = payload["rate_limits"] as? [String: Any]
+        let info = payload["info"] as? [String: Any]
 
-        let planType = rateLimits["plan_type"] as? String
-        let limitId = rateLimits["limit_id"] as? String
-        let primaryUsed = (rateLimits["primary"] as? [String: Any])?["used_percent"] as? Double
-        let secondaryUsed = (rateLimits["secondary"] as? [String: Any])?["used_percent"] as? Double
+        let planType = rateLimits?["plan_type"] as? String
+        let limitId = rateLimits?["limit_id"] as? String
+        let primaryUsed = (rateLimits?["primary"] as? [String: Any])?["used_percent"] as? Double
+        let secondaryUsed = (rateLimits?["secondary"] as? [String: Any])?["used_percent"] as? Double
+        let totalTokens = (info?["total_token_usage"] as? [String: Any])?["total_tokens"] as? Int
+        let lastTokens = (info?["last_token_usage"] as? [String: Any])?["total_tokens"] as? Int
 
         var parts: [String] = []
 
@@ -674,6 +675,12 @@ class CodexSessionWatcher {
         }
         if let secondaryUsed {
             parts.append("secondary \(Int(secondaryUsed))%")
+        }
+        if let totalTokens {
+            parts.append("total \(totalTokens)")
+        }
+        if let lastTokens {
+            parts.append("last \(lastTokens)")
         }
 
         if parts.isEmpty {
