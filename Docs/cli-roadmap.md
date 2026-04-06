@@ -64,14 +64,14 @@
 
 | CLI | 当前状态 | 推荐路线 |
 |-----|----------|----------|
-| Qoder CLI | 未接入 | 当前明确不拆 source，待配置入口稳定后再评估 |
+| Qoder CLI | 未接入 | 官方文档对 CLI hooks 能力仍有分叉，当前继续不拆 source |
 
-### D. 暂不接入为正式 CLI source
+### D. 暂不接入为正式 CLI source 或保持 wrapper-first
 
 | CLI | 当前状态 | 原因 |
 |-----|----------|------|
 | Pi Coding Agent | 已部分接入 | 已有 wrapper + json helper 原型，后续补 rpc / session-file 评估 |
-| Crush | 已部分接入 | 已有最小 CLI wrapper 原型，后续补 session/state 调查 |
+| Crush | 已部分接入 | 已有 wrapper + 日志 watcher 原型，后续补结构化解析 |
 
 ## 逐项分析
 
@@ -273,12 +273,13 @@
 
 后续自动执行顺序固定为：
 
-1. `Codex Desktop` transcript 继续补低风险事件/字段
-2. `Amp CLI` 第二入口继续增强，但不强上高风险 `stream-json`
-3. `Copilot CLI` 真实 payload 兼容性继续增强
-4. `Windsurf / Kimi / Kiro` 做使用性和事件覆盖打磨
-5. `Cline CLI` 继续从首版监控推进到可选阻塞语义
-6. 仅在出现新证据时，再重新评估 `Qoder CLI`
+1. `Amp CLI` 继续从 `amp-stream` helper 往结构化事件提取推进
+2. `Pi` 继续从 `--mode json` helper 往更稳定的 JSON/RPC 解析推进
+3. `Crush` 继续从日志 watcher 原型往结构化日志识别推进
+4. `Cline CLI` 继续从首版监控推进到可选阻塞语义
+5. `Copilot CLI` 真实 payload 兼容性继续增强
+6. `Windsurf / Kimi / Kiro` 做使用性和事件覆盖打磨
+7. 仅在官方 CLI hooks 文档不再冲突时，再重新评估 `Qoder CLI`
 
 ## 不自动做的事情
 
