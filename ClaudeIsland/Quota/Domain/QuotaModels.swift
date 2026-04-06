@@ -293,6 +293,34 @@ struct QuotaProviderRecord: Identifiable, Equatable, Sendable {
         snapshot?.primaryWindow?.clampedUsedRatio ?? 0
     }
 
+    var secondaryRiskScore: Double {
+        snapshot?.secondaryWindow?.clampedUsedRatio ?? 0
+    }
+
+    var tertiaryRiskScore: Double {
+        snapshot?.tertiaryWindow?.clampedUsedRatio ?? 0
+    }
+
+    var creditsRiskScore: Double {
+        guard let credits = snapshot?.credits, !credits.isUnlimited else { return 0 }
+        if let used = credits.used, let total = credits.total, total > 0 {
+            return min(max(used / total, 0), 1)
+        }
+        if let remaining = credits.remaining, let total = credits.total, total > 0 {
+            return min(max((total - remaining) / total, 0), 1)
+        }
+        return 0
+    }
+
+    var displayRiskScore: Double {
+        [
+            primaryRiskScore,
+            secondaryRiskScore,
+            tertiaryRiskScore,
+            creditsRiskScore,
+        ].max() ?? 0
+    }
+
     var statusText: String {
         switch status {
         case .connected:
@@ -316,8 +344,8 @@ struct QuotaProviderRecord: Identifiable, Equatable, Sendable {
     }
 
     var summaryLine: String {
-        if let primary = snapshot?.primaryWindow {
-            return "\(primary.label) \(Int(primary.clampedUsedRatio * 100))%"
+        if let window = snapshot?.primaryWindow ?? snapshot?.secondaryWindow ?? snapshot?.tertiaryWindow {
+            return "\(window.label) \(Int(window.clampedUsedRatio * 100))%"
         }
         if let credits = snapshot?.credits, credits.isUnlimited {
             return "Unlimited"

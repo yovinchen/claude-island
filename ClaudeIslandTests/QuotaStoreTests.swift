@@ -35,6 +35,42 @@ final class QuotaStoreTests: XCTestCase {
         XCTAssertEqual(result.map(\.id), [.openrouter])
     }
 
+    func testHeaderRecordsUsesHighestAvailableRiskNotJustPrimary() {
+        let store = QuotaStore.shared
+        let primaryOnly = makeRecord(id: .warp, risk: 0.4, status: .connected)
+        let creditHeavy = QuotaProviderRecord(
+            descriptor: QuotaProviderRegistry.descriptor(for: .openrouter),
+            isEnabled: true,
+            isConfigured: true,
+            status: .connected,
+            snapshot: QuotaSnapshot(
+                providerID: .openrouter,
+                source: .apiKey,
+                primaryWindow: nil,
+                secondaryWindow: nil,
+                tertiaryWindow: nil,
+                credits: QuotaCredits(
+                    label: "Credits",
+                    used: 90,
+                    total: 100,
+                    remaining: 10,
+                    currencyCode: "USD",
+                    isUnlimited: false
+                ),
+                identity: nil,
+                updatedAt: Date(),
+                note: nil
+            ),
+            diagnostics: QuotaDiagnostics()
+        )
+
+        store._replaceRecordsForTesting([primaryOnly, creditHeavy], lastGlobalRefreshAt: Date())
+
+        let result = store.headerRecords(limit: 2)
+
+        XCTAssertEqual(result.map(\.id), [.openrouter, .warp])
+    }
+
     private func makeRecord(id: QuotaProviderID, risk: Double, status: QuotaProviderStatus) -> QuotaProviderRecord {
         QuotaProviderRecord(
             descriptor: QuotaProviderRegistry.descriptor(for: id),

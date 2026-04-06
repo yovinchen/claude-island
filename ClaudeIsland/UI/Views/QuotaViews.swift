@@ -583,8 +583,20 @@ struct QuotaSettingsPane: View {
                 return version
             }
             return String(localized: "quota.not_detected")
+        case .amp:
+            if let binary = QuotaRuntimeSupport.which("amp"),
+               let version = QuotaRuntimeSupport.detectProviderVersion(providerID: .amp, binaryPath: binary)
+            {
+                return version
+            }
+            if QuotaRuntimeSupport.which("amp") != nil {
+                return String(localized: "quota.detected")
+            }
+            return String(localized: "quota.not_detected")
         case .jetbrains:
             return JetBrainsIDEDetector.detectLatestIDE()?.displayName ?? String(localized: "quota.not_detected")
+        case .warp:
+            return QuotaRuntimeSupport.appBundleVersion(appName: "Warp") ?? String(localized: "quota.not_detected")
         default:
             break
         }
@@ -629,7 +641,7 @@ struct QuotaSettingsPane: View {
             return error
         }
         if record.snapshot != nil {
-            return providerUpdatedText(for: record)
+            return "\(record.summaryLine) • \(providerUpdatedText(for: record))"
         }
         if record.status == .needsConfiguration {
             return String(localized: "quota.needs_configuration")
@@ -774,7 +786,7 @@ struct QuotaHeaderDisplay: View {
         if !records.isEmpty {
             HStack(spacing: 4) {
                 ForEach(records) { record in
-                    Text("\(record.id.shortName) \(Int(record.primaryRiskScore * 100))%")
+                    Text("\(record.id.shortName) \(Int(record.displayRiskScore * 100))%")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.8))
                         .padding(.horizontal, 6)
@@ -787,10 +799,10 @@ struct QuotaHeaderDisplay: View {
     }
 
     private func chipColor(for record: QuotaProviderRecord) -> Color {
-        if record.primaryRiskScore >= 0.9 {
+        if record.displayRiskScore >= 0.9 {
             return TerminalColors.red
         }
-        if record.primaryRiskScore >= 0.7 {
+        if record.displayRiskScore >= 0.7 {
             return TerminalColors.amber
         }
         return TerminalColors.green
@@ -810,7 +822,7 @@ private struct QuotaOverviewCard: View {
                 QuotaStatusPill(status: record.status)
             }
 
-            QuotaProgressBar(progress: record.primaryRiskScore)
+            QuotaProgressBar(progress: record.displayRiskScore)
 
             Text(record.summaryLine)
                 .font(.system(size: 11))

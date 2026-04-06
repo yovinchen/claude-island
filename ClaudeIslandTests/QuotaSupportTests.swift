@@ -51,6 +51,35 @@ final class QuotaSupportTests: XCTestCase {
         XCTAssertEqual(record.summaryLine, "Unlimited")
     }
 
+    func testSummaryLineFallsBackToSecondaryWindowWhenPrimaryMissing() {
+        let descriptor = QuotaProviderRegistry.descriptor(for: .cursor)
+        let record = QuotaProviderRecord(
+            descriptor: descriptor,
+            isEnabled: true,
+            isConfigured: true,
+            status: .connected,
+            snapshot: QuotaSnapshot(
+                providerID: .cursor,
+                source: .web,
+                primaryWindow: nil,
+                secondaryWindow: QuotaWindow(
+                    label: "Auto",
+                    usedRatio: 0.65,
+                    detail: nil,
+                    resetsAt: nil
+                ),
+                tertiaryWindow: nil,
+                credits: nil,
+                identity: nil,
+                updatedAt: Date(),
+                note: nil
+            ),
+            diagnostics: QuotaDiagnostics()
+        )
+
+        XCTAssertEqual(record.summaryLine, "Auto 65%")
+    }
+
     func testResolvedBinaryAcceptsExecutablePathOverride() {
         let resolved = QuotaRuntimeSupport.resolvedBinary(defaultBinary: "missing-binary", overrideValue: "/bin/zsh")
 

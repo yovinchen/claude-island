@@ -77,8 +77,8 @@ final class QuotaStore: ObservableObject {
         orderedRecords
             .filter { $0.snapshot != nil }
             .sorted { lhs, rhs in
-                if lhs.primaryRiskScore != rhs.primaryRiskScore {
-                    return lhs.primaryRiskScore > rhs.primaryRiskScore
+                if lhs.displayRiskScore != rhs.displayRiskScore {
+                    return lhs.displayRiskScore > rhs.displayRiskScore
                 }
                 if lhs.statusSortPriority != rhs.statusSortPriority {
                     return lhs.statusSortPriority < rhs.statusSortPriority

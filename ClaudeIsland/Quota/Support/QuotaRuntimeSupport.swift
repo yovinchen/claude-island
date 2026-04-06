@@ -79,8 +79,6 @@ enum QuotaRuntimeSupport {
             return appBundleVersion(appName: "Cursor")
         case .opencode:
             return nodePackageVersionNearBinary(binaryPath: binaryPath, packageDirectoryName: "opencode-ai")
-        case .jetbrains:
-            return JetBrainsIDEDetector.detectLatestIDE()?.displayName
         default:
             return nil
         }
