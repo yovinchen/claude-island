@@ -746,8 +746,9 @@ private struct HelperOnlySource: HookSource {
     }
 
     func install(bridgePath: String) throws {
-        // Helpers are installed centrally by installLauncher(); enabling this
-        // source only needs the app-level helper refresh.
+        // Helper-backed integrations are repaired by refreshing the centrally
+        // managed launcher/helper bundle.
+        HookInstaller.installLauncher()
     }
 
     func uninstall() throws {

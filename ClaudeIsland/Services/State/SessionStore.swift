@@ -276,11 +276,21 @@ actor SessionStore {
             }
             return nil
         case .windsurf:
-            let path = URL(fileURLWithPath: cwd)
+            let workspacePath = URL(fileURLWithPath: cwd)
                 .appendingPathComponent(".windsurf/hooks.json")
                 .path
-            if FileManager.default.fileExists(atPath: path) {
+            let systemPath = "/Library/Application Support/Windsurf/hooks.json"
+            let hasWorkspace = FileManager.default.fileExists(atPath: workspacePath)
+            let hasSystem = FileManager.default.fileExists(atPath: systemPath)
+
+            if hasWorkspace && hasSystem {
+                return "Workspace Windsurf hooks config detected at .windsurf/hooks.json, and system-level hooks were also found at /Library/Application Support/Windsurf/hooks.json; higher-priority layers may override or extend your user-level hooks."
+            }
+            if hasWorkspace {
                 return "Workspace Windsurf hooks config detected at .windsurf/hooks.json; it may override or extend your user-level hooks."
+            }
+            if hasSystem {
+                return "System-level Windsurf hooks config detected at /Library/Application Support/Windsurf/hooks.json; it may override or extend your user/workspace hooks."
             }
             return nil
         case .copilot:

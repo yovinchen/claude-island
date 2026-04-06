@@ -57,7 +57,7 @@
 | Kiro CLI | 已部分接入 | 继续提升 wrapper/agent 可用性，不自动改默认 agent |
 | Amp CLI | 已部分接入 | plugin 路线 + `amp-exec` fallback，继续探索第二入口稳定性 |
 | Copilot CLI | 已部分接入 | 继续补 payload 兼容性与 tool result/args 提取 |
-| Windsurf | 已部分接入 | 继续补 hooks 事件覆盖与审批细节 |
+| Windsurf | 已部分接入 | 继续补 hooks 事件覆盖与审批细节，workspace/system 目前先做诊断不做深托管 |
 | Cline / Cline CLI | 已部分接入 | 首版 hooks source 已落地，后续补 cancel/审批返回 |
 
 ### C. 还没做，但有明确 hooks / 可执行路线
@@ -71,7 +71,7 @@
 | CLI | 当前状态 | 原因 |
 |-----|----------|------|
 | Pi Coding Agent | 已部分接入 | 已有 wrapper + json helper 原型，后续补 rpc / session-file 评估 |
-| Crush | 已部分接入 | 已有 wrapper + 日志 watcher 原型，后续补结构化解析 |
+| Crush | 已部分接入 | 已有 wrapper + 日志 watcher 原型，helper 丢失现已进入 auto-repair / watcher |
 
 ## 逐项分析
 

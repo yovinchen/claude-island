@@ -20,7 +20,7 @@
 | Antigravity | 未接入 | — | — | — | — | 仅 docs / gap 分析 |
 | Trae | 未接入 | unsupported marker | — | — | — | 代码里有 `SessionSource.trae`，但未进入 installer |
 | Cursor | 正式接入 | `hooks.json` | ✅ | ✅ | ✅ | Cursor 专属 `{continue, permission}` 响应 |
-| Windsurf | 部分支持 | `hooks.json` | ✅ | ✅ | ⚠️ | deny 已支持 `stderr + exit 2`，workspace/system 托管仍未做 |
+| Windsurf | 部分支持 | `hooks.json` | ✅ | ✅ | ⚠️ | deny 已支持 `stderr + exit 2`，workspace/system 已有诊断但仍未完整托管 |
 | CodeBuddy | 正式接入 | `settings.json` hooks | ✅ | ✅ | ✅ | 隐式审批已接通 |
 | Kiro | 部分支持 | custom agent + wrapper | ✅ | ✅ | — | 需显式使用 `claude-island` agent |
 | Lingma | 未接入 | — | — | — | — | 当前只有 rules / MCP 路线 |
@@ -92,8 +92,8 @@
 | Kimi CLI | ✅ | ✅ | ✅ | — | ⚠️ | 事件面持续向官方 13 事件对齐 |
 | Amp CLI | ✅ | ✅ | ✅ | — | ✅ | plugin + `amp-exec` + `amp-stream` |
 | Qoder CLI | — | — | — | — | — | docs-only |
-| Pi Coding Agent | ✅ | — | — | — | ✅ | `pi-json` 已覆盖 helper-path 单工具 / 多工具样本 |
-| Crush | ✅ | — | — | — | ✅ | wrapper + `CrushLogWatcher` 高层日志解析 |
+| Pi Coding Agent | ✅ | ✅ | ✅ | — | ✅ | helper 脚本现已进入 auto-repair / watcher |
+| Crush | ✅ | ✅ | ✅ | — | ✅ | helper 脚本现已进入 auto-repair / watcher；日志仍是高层解析 |
 
 ### VS 插件 / IDE 宿主
 
