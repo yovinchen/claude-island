@@ -47,6 +47,74 @@ extension UsageData: Equatable {
     }
 }
 
+extension UsageData {
+    nonisolated static func applying(rateLimits: [String: Any], to current: UsageData = .empty) -> UsageData {
+        var usage = current
+
+        if let primary = rateLimits["primary"] as? [String: Any] {
+            usage.primaryUsedPercent = percentage(from: primary) ?? usage.primaryUsedPercent
+            if let resetsAt = primary["resetsAt"] as? String {
+                usage.primaryResetsAt = parseDate(resetsAt) ?? usage.primaryResetsAt
+            }
+        }
+
+        if let secondary = rateLimits["secondary"] as? [String: Any] {
+            usage.secondaryUsedPercent = percentage(from: secondary) ?? usage.secondaryUsedPercent
+        }
+
+        if let model = rateLimits["model"] as? String, !model.isEmpty {
+            usage.model = model
+        }
+
+        if let context = rateLimits["contextWindow"] as? [String: Any] {
+            usage.contextWindowPercent = percentage(from: context) ?? usage.contextWindowPercent
+        }
+
+        return usage
+    }
+
+    nonisolated private static func percentage(from window: [String: Any]) -> Double? {
+        if let usedPercent = numericValue(window["used_percent"]) {
+            return normalizePercent(usedPercent)
+        }
+
+        if let used = numericValue(window["used"]),
+           let limit = numericValue(window["limit"]),
+           limit > 0
+        {
+            return min(max(used / limit, 0), 1)
+        }
+
+        return nil
+    }
+
+    nonisolated private static func numericValue(_ raw: Any?) -> Double? {
+        switch raw {
+        case let value as Double:
+            return value
+        case let value as Int:
+            return Double(value)
+        case let value as NSNumber:
+            return value.doubleValue
+        case let value as String:
+            return Double(value)
+        default:
+            return nil
+        }
+    }
+
+    nonisolated private static func normalizePercent(_ value: Double) -> Double {
+        let percent = value > 1 ? value / 100 : value
+        return min(max(percent, 0), 1)
+    }
+
+    nonisolated private static func parseDate(_ raw: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+    }
+}
+
 @MainActor
 class UsageDataManager: ObservableObject {
     static let shared = UsageDataManager()
@@ -67,35 +135,7 @@ class UsageDataManager: ObservableObject {
     /// Update usage data from a hook event
     func updateFromHookEvent(sessionId: String, rateLimits: [String: Any]?) {
         guard let rateLimits = rateLimits else { return }
-
-        var usage = usageBySession[sessionId] ?? UsageData()
-
-        if let primary = rateLimits["primary"] as? [String: Any] {
-            if let used = primary["used"] as? Double, let limit = primary["limit"] as? Double, limit > 0 {
-                usage.primaryUsedPercent = used / limit
-            }
-            if let resetsAt = primary["resetsAt"] as? String {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                usage.primaryResetsAt = formatter.date(from: resetsAt)
-            }
-        }
-
-        if let secondary = rateLimits["secondary"] as? [String: Any] {
-            if let used = secondary["used"] as? Double, let limit = secondary["limit"] as? Double, limit > 0 {
-                usage.secondaryUsedPercent = used / limit
-            }
-        }
-
-        if let model = rateLimits["model"] as? String {
-            usage.model = model
-        }
-
-        if let context = rateLimits["contextWindow"] as? [String: Any] {
-            if let used = context["used"] as? Double, let limit = context["limit"] as? Double, limit > 0 {
-                usage.contextWindowPercent = used / limit
-            }
-        }
+        let usage = UsageData.applying(rateLimits: rateLimits, to: usageBySession[sessionId] ?? .empty)
 
         usageBySession[sessionId] = usage
         recalculateAggregated()
