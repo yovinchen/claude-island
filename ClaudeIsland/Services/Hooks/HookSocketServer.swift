@@ -568,13 +568,13 @@ class HookSocketServer {
     ]
 
     /// Build response JSON data based on source type
-    private func buildResponseData(decision: String, reason: String?, alwaysAllow: Bool, allowAll: Bool, autoApprove: Bool, toolName: String?, source: SessionSource) -> Data? {
+    private func buildResponseData(decision: String, reason: String?, alwaysAllow: Bool, allowAll: Bool, autoApprove: Bool, toolName: String?, toolInput: [String: AnyCodable]?, source: SessionSource) -> Data? {
         if Self.hookSpecificOutputSources.contains(source) {
             return buildHookSpecificOutputResponse(decision: decision, reason: reason, alwaysAllow: alwaysAllow, allowAll: allowAll, autoApprove: autoApprove, toolName: toolName)
         } else if source == .cursor {
             return buildCursorResponse(decision: decision, alwaysAllow: alwaysAllow)
         } else if source == .copilot || source == .ampCLI {
-            return buildCopilotResponse(decision: decision, reason: reason)
+            return buildCopilotResponse(decision: decision, reason: reason, modifiedArgs: decodeAnyCodableMap(toolInput))
         } else if source == .cline {
             return buildClineResponse(decision: decision, reason: reason)
         } else if source == .windsurf {
@@ -610,12 +610,24 @@ class HookSocketServer {
     /// Build Copilot CLI preToolUse response format.
     /// Copilot expects a flat JSON object rather than Claude-style hookSpecificOutput.
     /// {"permissionDecision":"allow|deny|ask","permissionDecisionReason":"..."}
-    private func buildCopilotResponse(decision: String, reason: String?) -> Data? {
-        let response: [String: Any] = [
+    private func buildCopilotResponse(decision: String, reason: String?, modifiedArgs: [String: Any]?) -> Data? {
+        var response: [String: Any] = [
             "permissionDecision": decision == "allow" ? "allow" : "deny",
             "permissionDecisionReason": reason ?? (decision == "allow" ? "Approved by user" : "Denied by user")
         ]
+
+        if decision == "allow", let modifiedArgs, !modifiedArgs.isEmpty {
+            response["modifiedArgs"] = modifiedArgs
+        }
+
         return try? JSONSerialization.data(withJSONObject: response, options: [])
+    }
+
+    private func decodeAnyCodableMap(_ input: [String: AnyCodable]?) -> [String: Any]? {
+        guard let input else { return nil }
+        return input.reduce(into: [String: Any]()) { partialResult, entry in
+            partialResult[entry.key] = entry.value.value
+        }
     }
 
     /// Build a plain blocking message payload for CLIs that only care about stderr + exit 2.
@@ -742,7 +754,7 @@ class HookSocketServer {
         }
         permissionsLock.unlock()
 
-        guard let data = buildResponseData(decision: decision, reason: reason, alwaysAllow: alwaysAllow, allowAll: allowAll, autoApprove: autoApprove, toolName: toolName, source: source) else {
+        guard let data = buildResponseData(decision: decision, reason: reason, alwaysAllow: alwaysAllow, allowAll: allowAll, autoApprove: autoApprove, toolName: toolName, toolInput: pending.event.toolInput, source: source) else {
             close(pending.clientSocket)
             return
         }
@@ -785,7 +797,7 @@ class HookSocketServer {
         pendingPermissions.removeValue(forKey: pending.toolUseId)
         permissionsLock.unlock()
 
-        guard let data = buildResponseData(decision: decision, reason: reason, alwaysAllow: alwaysAllow, allowAll: allowAll, autoApprove: autoApprove, toolName: toolName, source: source) else {
+        guard let data = buildResponseData(decision: decision, reason: reason, alwaysAllow: alwaysAllow, allowAll: allowAll, autoApprove: autoApprove, toolName: toolName, toolInput: pending.event.toolInput, source: source) else {
             close(pending.clientSocket)
             permissionFailureHandler?(sessionId, pending.toolUseId)
             return
