@@ -182,6 +182,21 @@ private struct CodexQuotaUsageResponse: Decodable {
             case unlimited
             case balance
         }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.hasCredits = (try? container.decode(Bool.self, forKey: .hasCredits)) ?? false
+            self.unlimited = (try? container.decode(Bool.self, forKey: .unlimited)) ?? false
+            if let balance = try? container.decode(Double.self, forKey: .balance) {
+                self.balance = balance
+            } else if let balance = try? container.decode(String.self, forKey: .balance),
+                      let value = Double(balance)
+            {
+                self.balance = value
+            } else {
+                self.balance = nil
+            }
+        }
     }
 
     enum PlanType: Decodable {
@@ -202,12 +217,17 @@ private struct CodexQuotaUsageResponse: Decodable {
 }
 
 private enum CodexQuotaUsageFetcher {
+    nonisolated private static let defaultChatGPTBaseURL = "https://chatgpt.com/backend-api/"
+    nonisolated private static let chatGPTUsagePath = "/wham/usage"
+    nonisolated private static let codexUsagePath = "/api/codex/usage"
+
     static func fetchUsage(_ credentials: CodexQuotaCredentials) async throws -> CodexQuotaUsageResponse {
-        var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
+        var request = URLRequest(url: resolveUsageURL())
         request.httpMethod = "GET"
         request.timeoutInterval = 30
         request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("ClaudeIsland", forHTTPHeaderField: "User-Agent")
         if let accountId = credentials.accountId, !accountId.isEmpty {
             request.setValue(accountId, forHTTPHeaderField: "ChatGPT-Account-Id")
         }
@@ -215,14 +235,108 @@ private enum CodexQuotaUsageFetcher {
         let (data, response) = try await QuotaRuntimeSupport.data(for: request)
         switch response.statusCode {
         case 200:
-            return try JSONDecoder().decode(CodexQuotaUsageResponse.self, from: data)
+            do {
+                return try JSONDecoder().decode(CodexQuotaUsageResponse.self, from: data)
+            } catch {
+                let body = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let snippet = body.map { String($0.prefix(220)) } ?? "<non-utf8>"
+                throw QuotaProviderError.invalidResponse("Codex usage API returned unexpected JSON. \(snippet)")
+            }
         case 401, 403:
             throw QuotaProviderError.unauthorized("Codex OAuth token expired or invalid.")
         default:
             throw QuotaProviderError.invalidResponse("Codex usage API returned HTTP \(response.statusCode)")
         }
     }
+
+    nonisolated private static func resolveUsageURL() -> URL {
+        let baseURL = resolveChatGPTBaseURL()
+        let normalized = normalizeChatGPTBaseURL(baseURL)
+        let path = normalized.contains("/backend-api") ? chatGPTUsagePath : codexUsagePath
+        let fullURL = normalized + path
+        return URL(string: fullURL) ?? URL(string: defaultChatGPTBaseURL + chatGPTUsagePath)!
+    }
+
+    nonisolated private static func resolveChatGPTBaseURL() -> String {
+        if let contents = loadConfigContents(),
+           let parsed = parseChatGPTBaseURL(from: contents)
+        {
+            return parsed
+        }
+        return defaultChatGPTBaseURL
+    }
+
+    nonisolated private static func normalizeChatGPTBaseURL(_ value: String) -> String {
+        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            trimmed = defaultChatGPTBaseURL
+        }
+        while trimmed.hasSuffix("/") {
+            trimmed.removeLast()
+        }
+        if (trimmed.hasPrefix("https://chatgpt.com") || trimmed.hasPrefix("https://chat.openai.com")),
+           !trimmed.contains("/backend-api")
+        {
+            trimmed += "/backend-api"
+        }
+        return trimmed
+    }
+
+    nonisolated private static func parseChatGPTBaseURL(from contents: String) -> String? {
+        for rawLine in contents.split(whereSeparator: \.isNewline) {
+            let line = rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: true).first
+            let trimmed = line?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !trimmed.isEmpty else { continue }
+
+            let parts = trimmed.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
+            guard parts.count == 2 else { continue }
+
+            let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard key == "chatgpt_base_url" else { continue }
+
+            var value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.hasPrefix("\""), value.hasSuffix("\"") {
+                value = String(value.dropFirst().dropLast())
+            } else if value.hasPrefix("'"), value.hasSuffix("'") {
+                value = String(value.dropFirst().dropLast())
+            }
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
+    }
+
+    nonisolated private static func loadConfigContents() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let codexHome = QuotaRuntimeSupport.envValue(["CODEX_HOME"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let root = (codexHome?.isEmpty == false)
+            ? URL(fileURLWithPath: codexHome!)
+            : home.appendingPathComponent(".codex")
+        let url = root.appendingPathComponent("config.toml")
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    #if DEBUG
+    static func _test_resolveUsageURL(configContents: String?) -> URL {
+        let baseURL = configContents.flatMap(parseChatGPTBaseURL(from:)) ?? defaultChatGPTBaseURL
+        let normalized = normalizeChatGPTBaseURL(baseURL)
+        let path = normalized.contains("/backend-api") ? chatGPTUsagePath : codexUsagePath
+        return URL(string: normalized + path) ?? URL(string: defaultChatGPTBaseURL + chatGPTUsagePath)!
+    }
+    #endif
 }
+
+#if DEBUG
+enum CodexQuotaTestingSupport {
+    static func decodeCreditBalance(_ data: Data) throws -> Double? {
+        try JSONDecoder().decode(CodexQuotaUsageResponse.CreditDetails.self, from: data).balance
+    }
+
+    static func resolveUsageURL(configContents: String?) -> URL {
+        CodexQuotaUsageFetcher._test_resolveUsageURL(configContents: configContents)
+    }
+}
+#endif
 
 private struct CodexRPCAccountResponse: Decodable {
     let account: CodexRPCAccountDetails?
