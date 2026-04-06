@@ -18,4 +18,23 @@ if [ -z "$KIRO_BIN" ]; then
   exit 127
 fi
 
+ARGS=("$@")
+
+for ARG in "${ARGS[@]}"; do
+  case "$ARG" in
+    --help|-h|help|version|--version)
+      exec "$KIRO_BIN" "$@"
+      ;;
+  esac
+done
+
+INDEX=1
+while [ $INDEX -le $# ]; do
+  CURRENT="${ARGS[$INDEX-1]}"
+  if [ "$CURRENT" = "--agent" ] || [ "$CURRENT" = "-a" ]; then
+    exec "$KIRO_BIN" "$@"
+  fi
+  INDEX=$((INDEX + 1))
+done
+
 exec "$KIRO_BIN" --agent claude-island "$@"
