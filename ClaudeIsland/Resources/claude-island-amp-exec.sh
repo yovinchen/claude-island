@@ -68,16 +68,43 @@ CWD_JSON="$(escape_json "$PWD")"
 send_event "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON}"
 send_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"prompt\":$PROMPT_JSON}"
 
-RESULT="$(env PLUGINS=all "$AMP_BIN" --execute "$PROMPT" 2>&1)"
+STDOUT_FILE="$(mktemp -t claude-island-amp-exec.stdout.XXXXXX)"
+STDERR_FILE="$(mktemp -t claude-island-amp-exec.stderr.XXXXXX)"
+
+cleanup() {
+  rm -f "$STDOUT_FILE" "$STDERR_FILE"
+}
+
+trap cleanup EXIT
+
+env PLUGINS=all "$AMP_BIN" --execute "$PROMPT" >"$STDOUT_FILE" 2>"$STDERR_FILE"
 STATUS=$?
+
+RESULT="$(cat "$STDOUT_FILE")"
+ERROR_OUTPUT="$(cat "$STDERR_FILE")"
 
 RESULT_JSON="$(escape_json "$RESULT")"
 
 if [ $STATUS -eq 0 ]; then
   send_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"last_assistant_message\":$RESULT_JSON}"
 else
-  send_event "{\"hook_event_name\":\"Notification\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"message\":$RESULT_JSON,\"notification_type\":\"error\"}"
+  if [ -n "$ERROR_OUTPUT" ]; then
+    notify_error "$ERROR_OUTPUT"
+  elif [ -n "$RESULT" ]; then
+    notify_error "$RESULT"
+  else
+    notify_error "Amp execute failed with exit code $STATUS"
+  fi
+
+  send_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"message\":\"Amp execute failed\"}"
 fi
 
-print -r -- "$RESULT"
+if [ -n "$RESULT" ]; then
+  print -r -- "$RESULT"
+fi
+
+if [ -n "$ERROR_OUTPUT" ]; then
+  print -r -- "$ERROR_OUTPUT" >&2
+fi
+
 exit $STATUS
