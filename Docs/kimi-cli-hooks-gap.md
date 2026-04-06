@@ -57,7 +57,8 @@ Kimi CLI **现已完成 hooks 首版接入**。当前通过 `config.toml` 的受
 7. 基于本机真实样本，当前 `kimi-print` 也已经开始兼容 `tool_calls` + `role:"tool"` 这条 print-mode tool-calling 形状，可回放基础 `PreToolUse` / `PostToolUse`。
 8. 当前 `KimiHookSource.managedConfigPaths` 也已把 `claude-island-kimi-print` helper 纳入 repair / watcher 链路，helper 丢失时可通过统一 launcher 刷新恢复。
 9. 设置说明当前也已明确 `~/.kimi/config.toml` 是默认入口，但用户仍可能通过 `--config-file` / `--config` 偏离默认路径。
-10. ACP 继续单独作为第二阶段，不和 hooks 首版耦合。
+10. 当前还会补充观察最新 `~/.kimi/sessions/*/wire.jsonl`，把稳定的 `StatusUpdate / TurnEnd` 信号回流成通知，用来补充 hooks/helper 路径之外的运行时状态。
+11. ACP 继续单独作为第二阶段，不和 hooks 首版耦合。
 
 **主要阻塞**
 - 当前主要阻塞只剩 ACP 路线，以及更完整的事件覆盖和真实联调验证。

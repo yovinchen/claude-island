@@ -136,6 +136,14 @@ actor SessionStore {
                 await MainActor.run {
                     CrushLogWatcherManager.shared.startWatching(sessionId: sessionId, cwd: event.cwd)
                 }
+            } else if event.source == .kimiCLI {
+                await MainActor.run {
+                    KimiWireWatcherManager.shared.startWatching(sessionId: sessionId, cwd: event.cwd)
+                }
+            } else if event.source == .copilot {
+                await MainActor.run {
+                    CopilotEventWatcherManager.shared.startWatching(sessionId: sessionId)
+                }
             }
         }
 
@@ -224,6 +232,14 @@ actor SessionStore {
             if event.source == .crush {
                 await MainActor.run {
                     CrushLogWatcherManager.shared.stopWatching(sessionId: sessionId)
+                }
+            } else if event.source == .kimiCLI {
+                await MainActor.run {
+                    KimiWireWatcherManager.shared.stopWatching(sessionId: sessionId)
+                }
+            } else if event.source == .copilot {
+                await MainActor.run {
+                    CopilotEventWatcherManager.shared.stopWatching(sessionId: sessionId)
                 }
             }
         }
@@ -1049,6 +1065,8 @@ actor SessionStore {
         cancelPendingSync(sessionId: sessionId)
         await MainActor.run {
             CrushLogWatcherManager.shared.stopWatching(sessionId: sessionId)
+            KimiWireWatcherManager.shared.stopWatching(sessionId: sessionId)
+            CopilotEventWatcherManager.shared.stopWatching(sessionId: sessionId)
         }
         await MainActor.run {
             TerminalTitleManager.shared.clearTitle(for: sessionId)
