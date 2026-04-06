@@ -145,6 +145,7 @@ struct HookInstaller {
             ("claude-island-amp", "sh", "claude-island-amp"),
             ("claude-island-amp-exec", "sh", "claude-island-amp-exec"),
             ("claude-island-amp-stream", "sh", "claude-island-amp-stream"),
+            ("claude-island-kimi-print", "sh", "claude-island-kimi-print"),
             ("claude-island-kiro", "sh", "claude-island-kiro"),
             ("claude-island-pi-json", "sh", "claude-island-pi-json"),
             ("claude-island-pi", "sh", "claude-island-pi"),

@@ -89,7 +89,7 @@
 | Copilot CLI | ✅ | ✅ | ✅ | ✅ | ⚠️ | payload fallback / `modifiedArgs` 原型已接入，且已开始兼容本机 JSON 输出事件形状 |
 | OpenCode | ✅ | ✅ | ✅ | ✅ | ✅ | JS plugin + tool/result 提取 |
 | Droid | ✅ | ✅ | ✅ | ✅ | — | 正式 hooks source |
-| Kimi CLI | ✅ | ✅ | ✅ | — | ⚠️ | 事件面持续向官方 13 事件对齐，`StopFailure / Subagent* / Notification` 可读性已补强 |
+| Kimi CLI | ✅ | ✅ | ✅ | — | ⚠️ | hooks 仍是主入口，同时已有 `kimi-print` helper 作为最小 print-mode fallback |
 | Amp CLI | ✅ | ✅ | ✅ | — | ✅ | plugin + `amp-exec` + `amp-stream` |
 | Qoder CLI | — | — | — | — | — | docs-only |
 | Pi Coding Agent | ✅ | ✅ | ✅ | — | ✅ | helper 脚本现已进入 auto-repair / watcher |
