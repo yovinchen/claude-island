@@ -8,6 +8,34 @@
 
 按当前仓库状态，CLI 类对象可以分成 4 组：
 
+## 当前代码完成度快照
+
+以下快照以当前代码为准，判断标准是：
+- `正式接入`: runtime 已稳定存在，当前路线图把它视为正式支持
+- `部分支持`: 已有 source 或 wrapper/plugin 路线，但仍依赖特定入口、事件覆盖不足或联调不足
+- `仅文档`: 仓库里只有 gap/roadmap，没有 runtime 代码
+
+| CLI | 当前代码状态 | 依据 |
+|-----|--------------|------|
+| Claude Code | 正式接入 | `SessionSource.claude` + `ClaudeHookSource` |
+| Codex CLI | 正式接入 | `SessionSource.codexCLI` + `CodexHookSource` |
+| Codex Desktop | 正式接入 | `SessionSource.codexDesktop` + `CodexSessionWatcher` |
+| Gemini CLI | 正式接入 | `SessionSource.gemini` + `GeminiHookSource` |
+| Cursor | 正式接入 | `SessionSource.cursor` + `CursorHookSource` |
+| OpenCode | 正式接入 | `SessionSource.opencode` + `OpenCodeHookSource` |
+| Copilot CLI | 部分支持 | `SessionSource.copilot` + `CopilotHookSource`，但 payload/联调仍在继续 |
+| Qoder IDE hooks | 正式接入 | `SessionSource.qoder` + `QoderHookSource` |
+| Droid | 正式接入 | `SessionSource.droid` + `DroidHookSource` |
+| CodeBuddy | 正式接入 | `SessionSource.codebuddy` + `CodeBuddyHookSource` |
+| Windsurf | 部分支持 | `SessionSource.windsurf` + `WindsurfHookSource`，但 hooks 覆盖仍在补齐 |
+| Kimi CLI | 部分支持 | `SessionSource.kimiCLI` + `KimiHookSource`，但 hooks/联调仍偏首版 |
+| Kiro CLI | 部分支持 | `SessionSource.kiroCLI` + custom agent/wrapper 路线 |
+| Amp CLI | 部分支持 | `SessionSource.ampCLI` + plugin + `amp-exec` fallback |
+| Cline / Cline CLI | 仅文档 | `Docs/cline-hooks-gap.md`，无 runtime source |
+| Qoder CLI | 仅文档 | `Docs/qoder-cli-hooks-gap.md`，当前明确不拆 source |
+| Pi Coding Agent | 仅文档 | `Docs/pi-coding-agent-hooks-gap.md`，无 runtime source |
+| Crush | 仅文档 | `Docs/crush-hooks-gap.md`，无 runtime source |
+
 ### A. 已接入，可持续打磨
 
 | CLI | 当前状态 | 后续重点 |
