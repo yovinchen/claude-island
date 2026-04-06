@@ -30,11 +30,11 @@
 | Windsurf | 部分支持 | `SessionSource.windsurf` + `WindsurfHookSource`，但 hooks 覆盖仍在补齐 |
 | Kimi CLI | 部分支持 | `SessionSource.kimiCLI` + `KimiHookSource`，但 hooks/联调仍偏首版 |
 | Kiro CLI | 部分支持 | `SessionSource.kiroCLI` + custom agent/wrapper 路线 |
-| Amp CLI | 部分支持 | `SessionSource.ampCLI` + plugin + `amp-exec` fallback |
+| Amp CLI | 部分支持 | `SessionSource.ampCLI` + plugin + `amp-exec` fallback + `amp-stream` helper |
 | Cline / Cline CLI | 部分支持 | `SessionSource.cline` + `ClineHookSource`，当前先做 hooks 监控与启用诊断 |
 | Qoder CLI | 仅文档 | `Docs/qoder-cli-hooks-gap.md`，当前明确不拆 source |
 | Pi Coding Agent | 仅文档 | `Docs/pi-coding-agent-hooks-gap.md`，无 runtime source |
-| Crush | 部分支持 | `SessionSource.crush` + `claude-island-crush` helper，当前先做 wrapper 原型 |
+| Crush | 部分支持 | `SessionSource.crush` + wrapper + `CrushLogWatcher` 最小日志解析 |
 
 ### A. 已接入，可持续打磨
 
@@ -221,9 +221,10 @@
 - `amp-exec` fallback 路线
 - plugin session id 更稳定
 - `AMP_SETTINGS_FILE` 自定义 settings 路径诊断
+- `amp-stream` 最小 `--stream-json` helper 原型
 
 **剩余缺口**
-- `stream-json` 仍未形成稳定第二入口
+- `stream-json` 仍未形成稳定 watcher 级第二入口
 - plugin API 仍有线程/session 暴露限制
 
 **建议**
@@ -260,11 +261,11 @@
 ### 13. Pi / Crush
 
 **当前状态**
-- `Crush` 已有最小 wrapper 原型
+- `Crush` 已有最小 wrapper 原型 + 日志 watcher 原型
 - `Pi` 仍只有文档，没有代码实现
 
 **建议**
-- `Crush` 继续从当前 wrapper 原型往 `./.crush/logs/crush.log` 这条日志面调查推进
+- `Crush` 继续从当前 `./.crush/logs/crush.log` watcher 原型往结构化解析推进
 - 继续避免先碰 MCP/权限
 - `Pi` 继续保持 docs-only，除非先发现稳定的 session store 或官方扩展事件面
 
