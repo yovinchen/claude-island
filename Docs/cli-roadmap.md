@@ -72,8 +72,10 @@
   - `function_call_output`
   - `custom_tool_call`
   - `custom_tool_call_output`
+  - `reasoning`
   - `token_count`
   - `agent_message`
+  - `item_completed`
   - `turn_aborted`
   - `compaction`
   - `context_compacted`

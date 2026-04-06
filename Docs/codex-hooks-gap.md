@@ -146,11 +146,11 @@ notify = ["command", "arg1", "arg2"]
 
 **官方状态**: Codex Desktop transcript JSONL 包含完整工具调用记录（function_call, function_result 等）。
 
-**当前行为**: `CodexSessionWatcher` 仅提取 `user_message`, `task_started`, `task_complete` 三种事件类型。
+**当前行为**: `CodexSessionWatcher` 已能提取 `user_message`、`task_started`、`task_complete`，并继续覆盖 `function_call / function_call_output / custom_tool_call / custom_tool_call_output / reasoning / token_count / item_completed / compaction / context_compacted` 等 transcript 事件。
 
-**影响**: Desktop 会话缺少工具级粒度追踪。
+**影响**: 当前缺口已经从“有没有工具级粒度”缩小为“还有哪些 transcript 细节值得继续低风险补齐”。
 
-**建议方案**: 扩展 `desktopEvent()` 方法，解析 `function_call`→PreToolUse, `function_result`→PostToolUse 映射。
+**建议方案**: 继续沿 `desktopEvent()` 做低风险增量，把更多稳定出现的 `response_item` / `event_msg` 类型映射进统一协议，但不新建第二套 Desktop source 模型。
 
 ---
 
@@ -192,7 +192,7 @@ notify = ["command", "arg1", "arg2"]
 1. **高**: 注册 PreToolUse + PostToolUse 事件（扩展 `events` 数组）
 2. **高**: 适配 Codex hook 输出协议（`PermissionHandler` 源感知格式化）
 3. **中**: 注册 Stop 为 hooks.json 事件（补充 notify 不足）
-4. **低**: Desktop transcript 完整解析
+4. **低**: Desktop transcript 持续增量解析
 5. **低**: notify payload 元数据提取
 
 ## 基于本地代码的实现可行性
@@ -207,7 +207,7 @@ notify = ["command", "arg1", "arg2"]
 **最小实现方案**
 1. 校正本文上半部分的旧结论，以当前代码为准。
 2. 针对 Codex CLI 再核一遍 stdout 响应字段与 exit code 语义。
-3. 扩展 Desktop transcript watcher，把 `function_call` / `function_result` 级事件映射进统一协议。
+3. 扩展 Desktop transcript watcher，把后续确认稳定的 transcript 事件继续映射进统一协议。
 
 **主要阻塞**
 - Codex Desktop 不是 installer 问题，而是 watcher 质量问题；需要改 transcript 解析逻辑，不是只改 `HookInstaller`。
