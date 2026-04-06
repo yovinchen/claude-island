@@ -68,9 +68,10 @@ PROMPT_JSON="$(escape_json "$PROMPT")"
 CWD_JSON="$(escape_json "$PWD")"
 LAST_FILE="$(mktemp -t claude-island-pi-json.last.XXXXXX)"
 STDERR_FILE="$(mktemp -t claude-island-pi-json.stderr.XXXXXX)"
+STREAM_FILE="$(mktemp -t claude-island-pi-json.stream.XXXXXX)"
 
 cleanup() {
-  rm -f "$LAST_FILE" "$STDERR_FILE"
+  rm -f "$LAST_FILE" "$STDERR_FILE" "$STREAM_FILE"
 }
 
 trap cleanup EXIT
@@ -78,12 +79,77 @@ trap cleanup EXIT
 send_event "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON}"
 send_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"prompt\":$PROMPT_JSON}"
 
-PARSER='import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
+PARSER='import json, pathlib, subprocess, sys
+last_path = pathlib.Path(sys.argv[1])
+stream_path = pathlib.Path(sys.argv[2])
+bridge = sys.argv[3]
+session_id = sys.argv[4]
+cwd = sys.argv[5]
 last_text = ""
-for raw in sys.stdin:
-    sys.stdout.write(raw)
-    sys.stdout.flush()
+tool_calls = {}
+seen_pre = set()
+seen_post = set()
+
+def send(payload):
+    if not bridge:
+        return
+    try:
+        subprocess.run([bridge, "--source", "pi"], input=json.dumps(payload).encode(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except Exception:
+        pass
+
+def stringify(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                if item.get("type") == "text" and item.get("text"):
+                    parts.append(item["text"])
+                elif item.get("text"):
+                    parts.append(item["text"])
+                else:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+            elif item is not None:
+                parts.append(str(item))
+        return "\\n".join(part for part in parts if part)
+    if value is None:
+        return ""
+    return json.dumps(value, ensure_ascii=False)
+
+def emit_tool_start(tool_id, name, tool_input):
+    if not tool_id or tool_id in seen_pre:
+        return
+    seen_pre.add(tool_id)
+    tool_calls[tool_id] = {"name": name, "input": tool_input}
+    send({
+        "hook_event_name": "PreToolUse",
+        "session_id": session_id,
+        "cwd": cwd,
+        "tool_name": name,
+        "tool_input": tool_input,
+        "tool_use_id": tool_id,
+    })
+
+def emit_tool_end(tool_id, content, is_error=False):
+    if not tool_id or tool_id in seen_post:
+        return
+    seen_post.add(tool_id)
+    metadata = tool_calls.get(tool_id, {})
+    text = stringify(content)
+    send({
+        "hook_event_name": "PostToolUseFailure" if is_error else "PostToolUse",
+        "session_id": session_id,
+        "cwd": cwd,
+        "tool_name": metadata.get("name"),
+        "tool_input": metadata.get("input"),
+        "tool_use_id": tool_id,
+        "tool_response": text,
+        "error": text if is_error else None,
+    })
+
+for raw in stream_path.read_text().splitlines():
     raw = raw.strip()
     if not raw:
         continue
@@ -91,34 +157,55 @@ for raw in sys.stdin:
         obj = json.loads(raw)
     except Exception:
         continue
-    candidates = []
-    if isinstance(obj, dict):
-        candidates.extend([
-            obj.get("text"),
-            obj.get("message"),
-            obj.get("content"),
-        ])
-        message = obj.get("message")
-        if isinstance(message, dict):
-            candidates.extend([message.get("text"), message.get("content")])
+
+    if not isinstance(obj, dict):
+        continue
+
+    candidates = [obj.get("text"), obj.get("message"), obj.get("content")]
+    message = obj.get("message")
+    if isinstance(message, dict):
+        candidates.extend([message.get("text"), message.get("content")])
+        content = message.get("content")
+    else:
         content = obj.get("content")
-        if isinstance(content, list):
-            texts = []
-            for item in content:
-                if isinstance(item, dict):
-                    if item.get("type") == "text" and item.get("text"):
-                        texts.append(item["text"])
-                    elif item.get("text"):
-                        texts.append(item["text"])
-            if texts:
-                candidates.append("\\n".join(texts))
+
+    if isinstance(content, list):
+        texts = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if item_type == "text" and item.get("text"):
+                texts.append(item["text"])
+            elif item.get("text"):
+                texts.append(item["text"])
+            elif item_type in ("tool_use", "tool-call", "tool_call"):
+                emit_tool_start(item.get("id") or item.get("tool_use_id") or item.get("toolUseId"), item.get("name") or item.get("tool"), item.get("input") or item.get("arguments"))
+            elif item_type in ("tool_result", "tool-response", "tool_response"):
+                emit_tool_end(item.get("tool_use_id") or item.get("toolUseId") or item.get("id"), item.get("content") or item.get("output"), bool(item.get("is_error")))
+        if texts:
+            candidates.append("\\n".join(texts))
+
+    top_type = obj.get("type")
+    if top_type in ("tool_use", "tool-call", "tool_call"):
+        emit_tool_start(obj.get("id") or obj.get("tool_use_id") or obj.get("toolUseId"), obj.get("name") or obj.get("tool"), obj.get("input") or obj.get("arguments"))
+    elif top_type in ("tool_result", "tool-response", "tool_response"):
+        emit_tool_end(obj.get("tool_use_id") or obj.get("toolUseId") or obj.get("id"), obj.get("content") or obj.get("output"), bool(obj.get("is_error")))
+
     for value in candidates:
         if isinstance(value, str) and value.strip():
             last_text = value.strip()
-path.write_text(last_text)'
 
-"$PI_BIN" --mode json -p "$PROMPT" 2>"$STDERR_FILE" | python3 -c "$PARSER" "$LAST_FILE"
+last_path.write_text(last_text)'
+
+"$PI_BIN" --mode json -p "$PROMPT" 2>"$STDERR_FILE" | tee "$STREAM_FILE"
 STATUS=$?
+
+BRIDGE_PATH=""
+if [ -x "$BRIDGE" ]; then
+  BRIDGE_PATH="$BRIDGE"
+fi
+python3 -c "$PARSER" "$LAST_FILE" "$STREAM_FILE" "$BRIDGE_PATH" "$SESSION_ID" "$PWD"
 
 LAST_ASSISTANT_MESSAGE=""
 if [ -f "$LAST_FILE" ]; then
