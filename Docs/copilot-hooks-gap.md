@@ -96,6 +96,7 @@ GitHub Copilot CLI（2026-02 GA）官方支持以下 Hook 事件：
 - 运行时现在会检测项目级 `.github/hooks/` 目录下的 JSON hooks 文件，并提示它们可能覆盖用户级 hooks。
 - 当前还会同步安装 `~/.claude-island/bin/claude-island-copilot-json`，作为 `copilot -p --output-format json` 的最小 helper 入口。
 - 当前安装器会统一改写为 launcher 路径，并清理已知的旧 `VibeIsland` Copilot hook 条目，减少因遗留 command 失败导致整组 hooks 记为失败。
+- 基于本机真实 tool-using JSON 样本，`copilot-json` 当前也已开始兼容 `toolRequests`、`tool.execution_start`、`tool.execution_complete`，可回放基础 `PreToolUse / PostToolUse`。
 - 当前还会补充观察最新 `~/.copilot/session-state/*/events.jsonl`，把真实 `hook.end` 失败信号回流成通知，便于定位 hooks 本身的运行错误。
 
 **改进方案**: 后续再决定是否支持扫描和注入项目级 `.github/hooks/` 目录中的配置文件。

@@ -34,7 +34,7 @@
 | Codex CLI | 正式接入 | `hooks.json` + `config.toml` + `notify` | ✅ | ✅ | ⚠️ | `PreToolUse/PostToolUse` 当前主要覆盖 Bash |
 | Codex Desktop | 正式接入 | `session_index.jsonl` + transcript watcher | — | ✅ | — | 非 hook source，走 transcript 解析 |
 | Gemini CLI | 正式接入 | `settings.json` hooks | ✅ | ✅ | — | 生命周期覆盖完整，未做独立审批模型 |
-| Copilot CLI | 部分支持 | `config.json` hooks | ✅ | ✅ | ⚠️ | 隐式审批和 `modifiedArgs` 原型已接入，项目级 `.github/hooks/*.json` 已做目录级诊断，且已有真实 hooks 样本、旧 VibeIsland 迁移清理与本地 events.jsonl 补充观察 |
+| Copilot CLI | 部分支持 | `config.json` hooks | ✅ | ✅ | ⚠️ | 隐式审批和 `modifiedArgs` 原型已接入，项目级 `.github/hooks/*.json` 已做目录级诊断，且已有真实 hooks 样本、旧 VibeIsland 迁移清理、本地 events.jsonl 观察与 JSON helper 工具事件回放 |
 | OpenCode | 正式接入 | JS plugin | ✅ | ✅ | — | plugin 路线稳定，先做只读增强 |
 | Droid | 正式接入 | Factory `settings.json` hooks | ✅ | ✅ | ✅ | Claude-compatible `hookSpecificOutput` |
 | Kimi CLI | 部分支持 | `config.toml` hooks | ✅ | ✅ | ⚠️ | 首版事件覆盖已接近官方 13 事件，事件字段提取已补强，并已拿到 print-mode tool-calling 样本与 wire.jsonl 补充观察面 |
@@ -86,7 +86,7 @@
 | Codex CLI | ✅ | ✅ | ✅ | ✅ | ⚠️ | notify + CLI hooks，细节仍在打磨 |
 | Codex Desktop | — | — | — | — | ✅ | transcript / rate-limit / reasoning 解析 |
 | Gemini CLI | ✅ | ✅ | ✅ | ✅ | ✅ | Gemini 专属生命周期已接入为通知类事件 |
-| Copilot CLI | ✅ | ✅ | ✅ | ✅ | ✅ | hooks 仍是主入口，同时已有 `copilot-json` helper、真实 hooks 样本，以及 `events.jsonl` 失败补充观察 |
+| Copilot CLI | ✅ | ✅ | ✅ | ✅ | ✅ | hooks 仍是主入口，同时已有 `copilot-json` helper（含基础工具事件回放）、真实 hooks 样本，以及 `events.jsonl` 失败补充观察 |
 | OpenCode | ✅ | ✅ | ✅ | ✅ | ✅ | JS plugin + tool/result 提取 |
 | Droid | ✅ | ✅ | ✅ | ✅ | — | 正式 hooks source |
 | Kimi CLI | ✅ | ✅ | ✅ | — | ✅ | hooks 仍是主入口，`kimi-print` helper 已进入 auto-repair / watcher，并补充观察 `wire.jsonl` 的状态/失败信号 |

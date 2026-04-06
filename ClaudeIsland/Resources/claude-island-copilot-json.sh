@@ -87,6 +87,9 @@ stream_path = pathlib.Path(sys.argv[3])
 stderr_path = pathlib.Path(sys.argv[4])
 last_text = ""
 result_error = ""
+tool_calls = {}
+seen_pre = set()
+seen_post = set()
 
 def remember_text(value):
     global last_text
@@ -97,6 +100,54 @@ def remember_error(value):
     global result_error
     if isinstance(value, str) and value.strip():
         result_error = value.strip()
+
+def stringify(value):
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    return json.dumps(value, ensure_ascii=False)
+
+def send(payload):
+    import subprocess
+    bridge = pathlib.Path.home()/".claude-island/bin/claude-island-bridge-launcher.sh"
+    if not bridge.exists():
+        return
+    try:
+        subprocess.run([str(bridge), "--source", "copilot"], input=json.dumps(payload).encode(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except Exception:
+        pass
+
+def emit_tool_start(tool_id, name, tool_input):
+    if not tool_id or tool_id in seen_pre:
+        return
+    seen_pre.add(tool_id)
+    tool_calls[tool_id] = {"name": name, "input": tool_input}
+    send({
+        "hook_event_name": "PreToolUse",
+        "session_id": "'"$SESSION_ID"'",
+        "cwd": "'"$PWD"'",
+        "tool_name": name,
+        "tool_input": tool_input,
+        "tool_use_id": tool_id,
+    })
+
+def emit_tool_end(tool_id, result, is_error=False):
+    if not tool_id or tool_id in seen_post:
+        return
+    seen_post.add(tool_id)
+    meta = tool_calls.get(tool_id, {})
+    text = stringify(result)
+    send({
+        "hook_event_name": "PostToolUseFailure" if is_error else "PostToolUse",
+        "session_id": "'"$SESSION_ID"'",
+        "cwd": "'"$PWD"'",
+        "tool_name": meta.get("name"),
+        "tool_input": meta.get("input"),
+        "tool_use_id": tool_id,
+        "tool_response": text,
+        "error": text if is_error else None,
+    })
 
 for raw in stream_path.read_text().splitlines():
     raw = raw.strip()
@@ -115,6 +166,26 @@ for raw in stream_path.read_text().splitlines():
 
     if event_type == "assistant.message":
         remember_text(data.get("content"))
+        tool_requests = data.get("toolRequests")
+        if isinstance(tool_requests, list):
+            for request in tool_requests:
+                if not isinstance(request, dict):
+                    continue
+                emit_tool_start(
+                    request.get("toolCallId"),
+                    request.get("name"),
+                    request.get("arguments") if isinstance(request.get("arguments"), dict) else {"raw": request.get("arguments")} if request.get("arguments") is not None else None,
+                )
+    elif event_type == "tool.execution_start":
+        emit_tool_start(
+            data.get("toolCallId"),
+            data.get("toolName"),
+            data.get("arguments") if isinstance(data.get("arguments"), dict) else {"raw": data.get("arguments")} if data.get("arguments") is not None else None,
+        )
+    elif event_type == "tool.execution_complete":
+        success = data.get("success")
+        result = data.get("result") if isinstance(data.get("result"), dict) else data.get("result")
+        emit_tool_end(data.get("toolCallId"), result, is_error=(success is False))
     elif event_type == "result":
         if obj.get("exitCode") not in (0, None):
             remember_error(data.get("message") or obj.get("message") or "Copilot JSON mode failed")
