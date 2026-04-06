@@ -65,4 +65,22 @@ final class QuotaSupportTests: XCTestCase {
 
         XCTAssertNil(resolved)
     }
+
+    func testNormalizeVersionLineStripsCodexPrefix() {
+        let version = QuotaRuntimeSupport._test_normalizeVersionLine(providerID: .codex, line: "codex 0.20.3")
+
+        XCTAssertEqual(version, "0.20.3")
+    }
+
+    func testNormalizeVersionLineStripsKiroPrefix() {
+        let version = QuotaRuntimeSupport._test_normalizeVersionLine(providerID: .kiro, line: "kiro-cli 1.24.0")
+
+        XCTAssertEqual(version, "1.24.0")
+    }
+
+    func testNormalizeVersionLineDropsClaudeParenSuffix() {
+        let version = QuotaRuntimeSupport._test_normalizeVersionLine(providerID: .claude, line: "1.2.3 (Claude Code)")
+
+        XCTAssertEqual(version, "1.2.3")
+    }
 }

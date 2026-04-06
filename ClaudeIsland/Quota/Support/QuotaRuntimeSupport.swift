@@ -54,6 +54,41 @@ enum QuotaRuntimeSupport {
         return nil
     }
 
+    nonisolated static func detectProviderVersion(providerID: QuotaProviderID, binaryPath: String) -> String? {
+        let variants: [[String]]
+        switch providerID {
+        case .claude:
+            variants = [["--allowed-tools", "", "--version"], ["--version"]]
+        case .gemini:
+            variants = [["--version"], ["-v"]]
+        case .kiro:
+            variants = [["--version"], ["version"]]
+        case .codex:
+            variants = [["--version"], ["version"], ["-v"]]
+        default:
+            variants = [["--version"], ["version"], ["-v"]]
+        }
+
+        for arguments in variants {
+            switch ProcessExecutor.shared.runSync(binaryPath, arguments: arguments) {
+            case .success(let output):
+                let cleanedOutput = stripANSI(output)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if let line = cleanedOutput
+                    .split(whereSeparator: \.isNewline)
+                    .map({ String($0).trimmingCharacters(in: .whitespacesAndNewlines) })
+                    .first(where: { !$0.isEmpty }),
+                   let normalized = normalizeVersionLine(providerID: providerID, line: line)
+                {
+                    return normalized
+                }
+            case .failure:
+                continue
+            }
+        }
+        return nil
+    }
+
     nonisolated static func envValue(_ keys: [String], fallback: String? = nil) -> String? {
         let environment = Foundation.ProcessInfo.processInfo.environment
         for key in keys {
@@ -194,4 +229,41 @@ enum QuotaRuntimeSupport {
         guard let value = doubleValue(raw) else { return nil }
         return Date(timeIntervalSince1970: value / 1000.0)
     }
+
+    nonisolated private static func normalizeVersionLine(providerID: QuotaProviderID, line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        switch providerID {
+        case .kiro:
+            if trimmed.hasPrefix("kiro-cli ") {
+                return String(trimmed.dropFirst("kiro-cli ".count))
+            }
+        case .codex:
+            if trimmed.hasPrefix("codex ") {
+                return String(trimmed.dropFirst("codex ".count))
+            }
+        case .gemini:
+            if trimmed.hasPrefix("gemini ") {
+                return String(trimmed.dropFirst("gemini ".count))
+            }
+        case .claude:
+            if let parenRange = trimmed.range(of: "(") {
+                let prefix = trimmed[..<parenRange.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !prefix.isEmpty {
+                    return prefix
+                }
+            }
+        default:
+            break
+        }
+
+        return trimmed
+    }
+
+    #if DEBUG
+    nonisolated static func _test_normalizeVersionLine(providerID: QuotaProviderID, line: String) -> String? {
+        normalizeVersionLine(providerID: providerID, line: line)
+    }
+    #endif
 }

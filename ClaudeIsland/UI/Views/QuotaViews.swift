@@ -562,7 +562,10 @@ struct QuotaSettingsPane: View {
     private func providerDetectionText(for record: QuotaProviderRecord) -> String {
         if let cliBinaryName = record.descriptor.cliBinaryName {
             if let resolved = QuotaRuntimeSupport.resolvedBinary(defaultBinary: cliBinaryName, providerID: record.id) {
-                return QuotaRuntimeSupport.detectVersion(binaryPath: resolved) ?? resolved
+                if let version = QuotaRuntimeSupport.detectProviderVersion(providerID: record.id, binaryPath: resolved) {
+                    return version
+                }
+                return String(localized: "quota.detected")
             }
             return String(localized: "quota.not_detected")
         }
