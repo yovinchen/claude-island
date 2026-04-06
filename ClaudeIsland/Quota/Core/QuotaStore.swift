@@ -12,6 +12,7 @@ final class QuotaStore: ObservableObject {
 
     @Published private(set) var records: [QuotaProviderID: QuotaProviderRecord]
     @Published private(set) var lastGlobalRefreshAt: Date?
+    @Published private(set) var refreshInFlight = false
 
     private var refreshLoopTask: Task<Void, Never>?
 
@@ -60,7 +61,12 @@ final class QuotaStore: ObservableObject {
     }
 
     var orderedRecords: [QuotaProviderRecord] {
-        QuotaProviderID.allCases.compactMap { records[$0] }
+        records.values.sorted { lhs, rhs in
+            if lhs.descriptor.sortPriority != rhs.descriptor.sortPriority {
+                return lhs.descriptor.sortPriority < rhs.descriptor.sortPriority
+            }
+            return lhs.displayName < rhs.displayName
+        }
     }
 
     func record(for providerID: QuotaProviderID) -> QuotaProviderRecord? {
@@ -73,6 +79,12 @@ final class QuotaStore: ObservableObject {
             .sorted { lhs, rhs in
                 if lhs.primaryRiskScore != rhs.primaryRiskScore {
                     return lhs.primaryRiskScore > rhs.primaryRiskScore
+                }
+                if lhs.statusSortPriority != rhs.statusSortPriority {
+                    return lhs.statusSortPriority < rhs.statusSortPriority
+                }
+                if lhs.descriptor.sortPriority != rhs.descriptor.sortPriority {
+                    return lhs.descriptor.sortPriority < rhs.descriptor.sortPriority
                 }
                 return lhs.displayName < rhs.displayName
             }
@@ -109,10 +121,30 @@ final class QuotaStore: ObservableObject {
     }
 
     func refreshAll() async {
+        guard !refreshInFlight else { return }
+        refreshInFlight = true
+        defer { refreshInFlight = false }
+
         for providerID in QuotaProviderID.allCases {
             await refresh(providerID: providerID)
         }
         lastGlobalRefreshAt = Date()
+    }
+
+    func refreshIfNeeded(maxAge: TimeInterval = 60) {
+        guard !refreshInFlight else { return }
+        if let lastGlobalRefreshAt,
+           Date().timeIntervalSince(lastGlobalRefreshAt) < maxAge
+        {
+            return
+        }
+
+        Task { await refreshAll() }
+    }
+
+    func userVisibleRefresh() {
+        guard !refreshInFlight else { return }
+        Task { await refreshAll() }
     }
 
     func refresh(providerID: QuotaProviderID) async {

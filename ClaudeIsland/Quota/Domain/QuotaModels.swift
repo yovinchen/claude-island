@@ -119,10 +119,16 @@ struct QuotaDiagnostics: Equatable, Sendable {
 struct QuotaProviderDescriptor: Equatable, Sendable {
     let id: QuotaProviderID
     let sourceKind: QuotaSourceKind
+    let primaryLabel: String
+    let secondaryLabel: String?
     let credentialHint: String
+    let credentialPlaceholder: String?
     let supportsManualSecret: Bool
     let defaultEnabled: Bool
     let refreshInterval: TimeInterval
+    let dashboardURL: String?
+    let statusURL: String?
+    let sortPriority: Int
 }
 
 struct QuotaProviderRecord: Identifiable, Equatable, Sendable {
@@ -136,6 +142,50 @@ struct QuotaProviderRecord: Identifiable, Equatable, Sendable {
     var id: QuotaProviderID { descriptor.id }
 
     var displayName: String { descriptor.id.displayName }
+
+    var primaryLabel: String {
+        snapshot?.primaryWindow?.label ?? descriptor.primaryLabel
+    }
+
+    var secondaryLabel: String? {
+        snapshot?.secondaryWindow?.label ?? descriptor.secondaryLabel
+    }
+
+    var dashboardURL: String? { descriptor.dashboardURL }
+
+    var statusURL: String? { descriptor.statusURL }
+
+    var credentialPlaceholder: String {
+        descriptor.credentialPlaceholder ?? descriptor.credentialHint
+    }
+
+    var effectiveSourceLabel: String {
+        diagnostics.sourceLabel ?? descriptor.sourceKind.rawValue
+    }
+
+    var accountText: String? {
+        snapshot?.identity?.email
+    }
+
+    var planText: String? {
+        snapshot?.identity?.plan
+    }
+
+    var organizationText: String? {
+        snapshot?.identity?.organization
+    }
+
+    var detailText: String? {
+        snapshot?.identity?.detail
+    }
+
+    var latestErrorText: String? {
+        diagnostics.lastError
+    }
+
+    var hasSnapshot: Bool {
+        snapshot != nil
+    }
 
     var primaryRiskScore: Double {
         snapshot?.primaryWindow?.clampedUsedRatio ?? 0
@@ -167,6 +217,9 @@ struct QuotaProviderRecord: Identifiable, Equatable, Sendable {
         if let primary = snapshot?.primaryWindow {
             return "\(primary.label) \(Int(primary.clampedUsedRatio * 100))%"
         }
+        if let credits = snapshot?.credits, credits.isUnlimited {
+            return "Unlimited"
+        }
         if let credits = snapshot?.credits, let remaining = credits.remaining {
             if credits.isUnlimited {
                 return "Unlimited"
@@ -180,5 +233,15 @@ struct QuotaProviderRecord: Identifiable, Equatable, Sendable {
             return detail
         }
         return descriptor.credentialHint
+    }
+
+    var statusSortPriority: Int {
+        switch status {
+        case .error: return 0
+        case .stale: return 1
+        case .refreshing: return 2
+        case .connected: return 3
+        case .needsConfiguration: return 4
+        }
     }
 }
