@@ -611,9 +611,11 @@ class HookSocketServer {
     /// Copilot expects a flat JSON object rather than Claude-style hookSpecificOutput.
     /// {"permissionDecision":"allow|deny|ask","permissionDecisionReason":"..."}
     private func buildCopilotResponse(decision: String, reason: String?, modifiedArgs: [String: Any]?) -> Data? {
+        let resolvedReason = reason ?? (decision == "allow" ? "Approved by user" : "Denied by user")
         var response: [String: Any] = [
             "permissionDecision": decision == "allow" ? "allow" : "deny",
-            "permissionDecisionReason": reason ?? (decision == "allow" ? "Approved by user" : "Denied by user")
+            "permissionDecisionReason": resolvedReason,
+            "reason": resolvedReason
         ]
 
         if decision == "allow", let modifiedArgs, !modifiedArgs.isEmpty {

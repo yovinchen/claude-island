@@ -663,14 +663,21 @@ enum EventMapper {
         firstString(
             input["error"],
             input["error_message"],
+            input["errorMessage"],
             input["stderr"],
+            nested(input, "partialResult", "error"),
+            nested(input, "partialResult", "stderr"),
+            nested(input, "partialResult", "errorMessage"),
             nested(input, "error", "message"),
             nested(input, "toolResult", "error"),
             nested(input, "toolResult", "stderr"),
+            nested(input, "toolResult", "errorMessage"),
             nested(input, "tool_result", "error"),
             nested(input, "tool_result", "stderr"),
+            nested(input, "tool_result", "errorMessage"),
             nested(input, "result", "error"),
             nested(input, "result", "stderr"),
+            nested(input, "result", "errorMessage"),
             nested(input, "tool_response", "error"),
             nested(input, "toolResponse", "error")
         )
@@ -683,6 +690,9 @@ enum EventMapper {
             input["output"],
             input["stdout"],
             input["stderr"],
+            nested(input, "partialResult", "output"),
+            nested(input, "partialResult", "stdout"),
+            nested(input, "partialResult", "stderr"),
             nested(input, "result", "output"),
             nested(input, "result", "stdout"),
             nested(input, "result", "stderr"),
@@ -718,6 +728,7 @@ enum EventMapper {
         }
 
         return firstString(
+            extractTextContent(from: nested(input, "partialResult", "content")),
             extractTextContent(from: nested(input, "result", "content")),
             extractTextContent(from: input["message"]),
             extractTextContent(from: input["content"]),
@@ -804,6 +815,7 @@ enum EventMapper {
             input["model"],
             nested(input, "assistant", "message"),
             nested(input, "result", "message"),
+            nested(input, "result", "errorMessage"),
             nested(input, "error", "message"),
             nested(input, "details", "message"),
             nested(input, "details", "title"),

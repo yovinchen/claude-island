@@ -60,7 +60,8 @@ GitHub Copilot CLI（2026-02 GA）官方支持以下 Hook 事件：
 **当前限制**:
 1. 仅对高风险工具触发 Notch 审批
 2. 当前已补通 `modifiedArgs` 原型通路，会在 allow 且有原始 `tool_input` 时回传该字段
-3. EventMapper 已继续补 `toolArgs / modifiedArgs / result / assistant / error` 等常见嵌套字段提取，但还未做真实 CLI 端联调验证
+3. 当前 Copilot 返回值同时带 `permissionDecisionReason` 与 `reason`，提高对不同 CLI 变体的兼容性。
+4. EventMapper 已继续补 `toolArgs / modifiedArgs / partialResult / result / assistant / errorMessage` 等常见嵌套字段提取，但还未做真实 CLI 端联调验证
 
 ---
 
