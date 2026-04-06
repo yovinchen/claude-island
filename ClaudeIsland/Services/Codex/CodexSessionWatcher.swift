@@ -338,6 +338,7 @@ class CodexSessionWatcher {
             )
 
         case "agent_message":
+            let message = payload["message"] as? String
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
@@ -351,7 +352,8 @@ class CodexSessionWatcher {
                 toolInput: nil,
                 toolUseId: nil,
                 notificationType: "assistant_message",
-                message: payload["message"] as? String
+                message: message,
+                lastAssistantMessage: message
             )
 
         case "token_count":
