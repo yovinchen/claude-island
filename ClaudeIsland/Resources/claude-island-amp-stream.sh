@@ -73,9 +73,10 @@ PROMPT_JSON="$(escape_json "$PROMPT")"
 CWD_JSON="$(escape_json "$PWD")"
 LAST_FILE="$(mktemp -t claude-island-amp-stream.last.XXXXXX)"
 STDERR_FILE="$(mktemp -t claude-island-amp-stream.stderr.XXXXXX)"
+STREAM_FILE="$(mktemp -t claude-island-amp-stream.jsonl.XXXXXX)"
 
 cleanup() {
-  rm -f "$LAST_FILE" "$STDERR_FILE"
+  rm -f "$LAST_FILE" "$STDERR_FILE" "$STREAM_FILE"
 }
 
 trap cleanup EXIT
@@ -83,30 +84,118 @@ trap cleanup EXIT
 send_event "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON}"
 send_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"prompt\":$PROMPT_JSON}"
 
-PARSER='import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
+PARSER='import json, pathlib, subprocess, sys
+last_path = pathlib.Path(sys.argv[1])
+stream_path = pathlib.Path(sys.argv[2])
+bridge = sys.argv[3]
+session_id = sys.argv[4]
+cwd = sys.argv[5]
 last_text = ""
-for raw in sys.stdin:
-    sys.stdout.write(raw)
-    sys.stdout.flush()
+tool_calls = {}
+seen_pre = set()
+seen_post = set()
+
+def send(payload):
+    if not bridge:
+        return
+    try:
+        subprocess.run([bridge, "--source", "amp_cli"], input=json.dumps(payload).encode(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except Exception:
+        pass
+
+def stringify_content(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                if item.get("type") == "text" and item.get("text"):
+                    parts.append(item["text"])
+                else:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+            else:
+                parts.append(str(item))
+        return "\\n".join(part for part in parts if part)
+    if value is None:
+        return ""
+    return json.dumps(value, ensure_ascii=False)
+
+for raw in stream_path.read_text().splitlines():
+    raw = raw.strip()
+    if not raw:
+        continue
     try:
         obj = json.loads(raw)
     except Exception:
         continue
-    if obj.get("type") != "assistant":
-        continue
-    content = (obj.get("message") or {}).get("content") or []
-    texts = [item.get("text") for item in content if isinstance(item, dict) and item.get("type") == "text" and item.get("text")]
-    if texts:
-        last_text = "\\n".join(texts)
-path.write_text(last_text)'
+    msg_type = obj.get("type")
+    message = obj.get("message") or {}
+    content = message.get("content") or []
+    if msg_type == "assistant":
+        texts = [item.get("text") for item in content if isinstance(item, dict) and item.get("type") == "text" and item.get("text")]
+        if texts:
+            last_text = "\\n".join(texts)
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "tool_use":
+                continue
+            tool_id = item.get("id") or item.get("tool_use_id")
+            if not tool_id:
+                continue
+            tool_calls[tool_id] = {
+                "name": item.get("name"),
+                "input": item.get("input"),
+            }
+            if tool_id in seen_pre:
+                continue
+            seen_pre.add(tool_id)
+            send({
+                "hook_event_name": "PreToolUse",
+                "session_id": session_id,
+                "cwd": cwd,
+                "tool_name": item.get("name"),
+                "tool_input": item.get("input"),
+                "tool_use_id": tool_id,
+            })
+    elif msg_type == "user":
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "tool_result":
+                continue
+            tool_id = item.get("tool_use_id")
+            if not tool_id or tool_id in seen_post:
+                continue
+            seen_post.add(tool_id)
+            metadata = tool_calls.get(tool_id, {})
+            is_error = bool(item.get("is_error"))
+            send({
+                "hook_event_name": "PostToolUseFailure" if is_error else "PostToolUse",
+                "session_id": session_id,
+                "cwd": cwd,
+                "tool_name": metadata.get("name"),
+                "tool_input": metadata.get("input"),
+                "tool_use_id": tool_id,
+                "tool_response": stringify_content(item.get("content")),
+                "error": stringify_content(item.get("content")) if is_error else None,
+            })
+
+last_path.write_text(last_text)'
 
 if [ "$AMP_BIN" = "$AMP_WRAPPER" ]; then
-  "$AMP_BIN" --execute --stream-json "$PROMPT" 2>"$STDERR_FILE" | python3 -c "$PARSER" "$LAST_FILE"
+  "$AMP_BIN" --execute --stream-json "$PROMPT" 2>"$STDERR_FILE" | tee "$STREAM_FILE"
 else
-  env PLUGINS=all "$AMP_BIN" --execute --stream-json "$PROMPT" 2>"$STDERR_FILE" | python3 -c "$PARSER" "$LAST_FILE"
+  env PLUGINS=all "$AMP_BIN" --execute --stream-json "$PROMPT" 2>"$STDERR_FILE" | tee "$STREAM_FILE"
 fi
 STATUS=$?
+
+BRIDGE_PATH=""
+if [ -x "$BRIDGE" ]; then
+  BRIDGE_PATH="$BRIDGE"
+fi
+python3 -c "$PARSER" "$LAST_FILE" "$STREAM_FILE" "$BRIDGE_PATH" "$SESSION_ID" "$PWD"
 
 LAST_ASSISTANT_MESSAGE=""
 if [ -f "$LAST_FILE" ]; then
