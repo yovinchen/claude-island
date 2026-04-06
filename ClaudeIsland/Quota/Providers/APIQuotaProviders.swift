@@ -44,12 +44,12 @@ private enum QuotaProviderValueLookup {
     }
 }
 
-private func quotaRatio(used: Double?, total: Double?) -> Double? {
+func quotaRatio(used: Double?, total: Double?) -> Double? {
     guard let used, let total, total > 0 else { return nil }
     return min(max(used / total, 0), 1)
 }
 
-private func quotaWindow(
+func quotaWindow(
     label: String,
     usedRatio: Double?,
     detail: String? = nil,

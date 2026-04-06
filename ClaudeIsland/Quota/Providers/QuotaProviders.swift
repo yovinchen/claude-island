@@ -136,6 +136,14 @@ enum QuotaProviderRegistry {
         uniqueKeysWithValues: providerDescriptors.map { descriptor in
             let provider: any QuotaProvider
             switch descriptor.id {
+            case .codex:
+                provider = CodexQuotaProvider()
+            case .claude:
+                provider = ClaudeQuotaProvider()
+            case .gemini:
+                provider = GeminiQuotaProvider()
+            case .kiro:
+                provider = KiroQuotaProvider()
             case .openrouter:
                 provider = OpenRouterQuotaProvider()
             case .warp:
@@ -144,11 +152,6 @@ enum QuotaProviderRegistry {
                 provider = KimiK2QuotaProvider()
             case .zai:
                 provider = ZAIQuotaProvider()
-            default:
-                provider = UnsupportedQuotaProvider(
-                    descriptor: descriptor,
-                    message: "\(descriptor.id.displayName) quota fetcher is not wired yet."
-                )
             }
             return (descriptor.id, provider)
         }
