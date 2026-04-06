@@ -209,7 +209,7 @@ Claude Island App (NotchView)
 | Kimi CLI | 已接入 | 已支持 `config.toml` hooks 安装与基础审批返回 | [docs/kimi-cli-hooks-gap.md](docs/kimi-cli-hooks-gap.md) |
 | Amp CLI | 部分支持 | 已支持全局 plugin 安装、基础事件桥接和危险工具审批；仍依赖 `PLUGINS=all amp` | [docs/amp-cli-hooks-gap.md](docs/amp-cli-hooks-gap.md) |
 | Qoder CLI | 未接入 | 当前 `qoder` 实现更偏 IDE hooks，不等同于 CLI | [docs/qoder-cli-hooks-gap.md](docs/qoder-cli-hooks-gap.md) |
-| Cline / Cline CLI | 未接入 | 官方 hooks 已有，仓库暂无 source | [docs/cline-hooks-gap.md](docs/cline-hooks-gap.md) |
+| Cline / Cline CLI | 部分支持 | 已有首版 hooks source、事件映射与基础启用；当前先做监控，不做阻塞审批 | [docs/cline-hooks-gap.md](docs/cline-hooks-gap.md) |
 | Claude Code | 已接入 | 完整 hooks 管线已实现 | [docs/claude-hooks-gap.md](docs/claude-hooks-gap.md) |
 | Codex | 已接入 | CLI hooks + Desktop transcript watcher | [docs/codex-hooks-gap.md](docs/codex-hooks-gap.md) |
 | OpenCode | 已接入 | JS 插件桥接已实现 | [docs/opencode-hooks-gap.md](docs/opencode-hooks-gap.md) |
@@ -226,7 +226,7 @@ Claude Island App (NotchView)
 | Droid 插件 | 部分支持 | Droid hooks 已接入，但未做 JetBrains/VS 插件专项适配说明 | [docs/droid-hooks-gap.md](docs/droid-hooks-gap.md) |
 | Claudix | 未接入 | 未找到稳定官方 hooks 文档 | [docs/claudix-hooks-gap.md](docs/claudix-hooks-gap.md) |
 | RooCode | 未接入 | 当前只见 modes / checkpoints / MCP | [docs/roocode-hooks-gap.md](docs/roocode-hooks-gap.md) |
-| Cline | 未接入 | 与 CLI 合并审计，当前暂无接入 | [docs/cline-hooks-gap.md](docs/cline-hooks-gap.md) |
+| Cline | 部分支持 | 与 CLI 合并审计，当前已有首版 hooks 接入 | [docs/cline-hooks-gap.md](docs/cline-hooks-gap.md) |
 | Copilot | 部分支持 | Copilot CLI hooks 已接入，但 VS / JetBrains 插件未专项接入 | [docs/copilot-hooks-gap.md](docs/copilot-hooks-gap.md) |
 
 | 工具 | 配置文件 | 配置目录 | Hook 类型 | 注册事件数 | 权限超时 |

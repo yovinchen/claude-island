@@ -31,7 +31,7 @@
 | Kimi CLI | 部分支持 | `SessionSource.kimiCLI` + `KimiHookSource`，但 hooks/联调仍偏首版 |
 | Kiro CLI | 部分支持 | `SessionSource.kiroCLI` + custom agent/wrapper 路线 |
 | Amp CLI | 部分支持 | `SessionSource.ampCLI` + plugin + `amp-exec` fallback |
-| Cline / Cline CLI | 仅文档 | `Docs/cline-hooks-gap.md`，无 runtime source |
+| Cline / Cline CLI | 部分支持 | `SessionSource.cline` + `ClineHookSource`，当前先做 hooks 监控与启用诊断 |
 | Qoder CLI | 仅文档 | `Docs/qoder-cli-hooks-gap.md`，当前明确不拆 source |
 | Pi Coding Agent | 仅文档 | `Docs/pi-coding-agent-hooks-gap.md`，无 runtime source |
 | Crush | 仅文档 | `Docs/crush-hooks-gap.md`，无 runtime source |
@@ -58,12 +58,12 @@
 | Amp CLI | 已部分接入 | plugin 路线 + `amp-exec` fallback，继续探索第二入口稳定性 |
 | Copilot CLI | 已部分接入 | 继续补 payload 兼容性与 tool result/args 提取 |
 | Windsurf | 已部分接入 | 继续补 hooks 事件覆盖与审批细节 |
+| Cline / Cline CLI | 已部分接入 | 首版 hooks source 已落地，后续补 cancel/审批返回 |
 
 ### C. 还没做，但有明确 hooks / 可执行路线
 
 | CLI | 当前状态 | 推荐路线 |
 |-----|----------|----------|
-| Cline / Cline CLI | 未接入 | 自定义 `HookSource`，先做只读，再评估审批 |
 | Qoder CLI | 未接入 | 当前明确不拆 source，待配置入口稳定后再评估 |
 
 ### D. 暂不接入为正式 CLI source
@@ -231,13 +231,18 @@
 
 ### 11. Cline / Cline CLI
 
-**当前状态**
-- 仓库里只有 gap 文档，没有 source
+**当前已完成**
+- `SessionSource.cline`
+- `ClineHookSource`
+- `~/Documents/Cline/Hooks` 首版脚本安装
+- `~/.cline/data/globalState.json` 的 `hooks-enabled` 启用
+- EventMapper 已新增 Cline 事件归一化与基础字段提取
+- setup/settings/notch/watcher/repair 名单已接通
 
 **建议路线**
-- 新增自定义 `HookSource`
-- 先只做会话 + 工具前后 + stop
-- 审批后置
+- 保持当前“先监控、后阻塞”策略
+- 下一步再评估 `cancel: true` / 审批返回
+- 暂不拆 `cline` / `cline_cli`
 
 ### 12. Qoder CLI
 
@@ -268,7 +273,7 @@
 2. `Amp CLI` 第二入口继续增强，但不强上高风险 `stream-json`
 3. `Copilot CLI` 真实 payload 兼容性继续增强
 4. `Windsurf / Kimi / Kiro` 做使用性和事件覆盖打磨
-5. `Cline CLI` 进入首版接入
+5. `Cline CLI` 继续从首版监控推进到可选阻塞语义
 6. 仅在出现新证据时，再重新评估 `Qoder CLI`
 
 ## 不自动做的事情
