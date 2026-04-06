@@ -508,10 +508,13 @@ enum EventMapper {
             input["toolResponse"],
             input["output"],
             input["stdout"],
+            input["stderr"],
             nested(input, "toolResult", "output"),
             nested(input, "toolResult", "stdout"),
+            nested(input, "toolResult", "stderr"),
             nested(input, "tool_result", "output"),
-            nested(input, "tool_result", "stdout")
+            nested(input, "tool_result", "stdout"),
+            nested(input, "tool_result", "stderr")
         ) {
             return direct
         }
@@ -525,7 +528,11 @@ enum EventMapper {
             stringify(nested(input, "toolResponse", "llmContent")) ??
             stringify(nested(input, "toolResult", "textResultForLlm")) ??
             stringify(nested(input, "tool_result", "textResultForLlm")) ??
-            stringify(nested(input, "toolResult", "textResult"))
+            stringify(nested(input, "toolResult", "textResult")) ??
+            extractTextContent(from: input["message"]) ??
+            extractTextContent(from: input["content"]) ??
+            extractTextContent(from: nested(input, "toolResult", "content")) ??
+            extractTextContent(from: nested(input, "tool_result", "content"))
     }
 
     private static func extractLastAssistantMessage(from input: [String: Any]) -> String? {
@@ -536,7 +543,9 @@ enum EventMapper {
             input["lastAgentMessage"],
             input["prompt_response"],
             input["promptResponse"]
-        )
+        ) ?? extractTextContent(from: input["message"]) ??
+            extractTextContent(from: input["content"]) ??
+            extractTextContent(from: nested(input, "message", "content"))
     }
 
     private static func extractPrompt(from input: [String: Any]) -> String? {
@@ -556,7 +565,8 @@ enum EventMapper {
             return first
         }
 
-        return nil
+        return extractTextContent(from: input["content"]) ??
+            extractTextContent(from: nested(input, "message", "content"))
     }
 
     private static func extractNotificationType(from input: [String: Any]) -> String? {
@@ -616,6 +626,44 @@ enum EventMapper {
            let text = String(data: data, encoding: .utf8),
            !text.isEmpty {
             return text
+        }
+
+        return nil
+    }
+
+    private static func extractTextContent(from value: Any?) -> String? {
+        guard let value else { return nil }
+
+        if let string = value as? String, !string.isEmpty {
+            return string
+        }
+
+        if let dict = value as? [String: Any] {
+            if let text = dict["text"] as? String, !text.isEmpty {
+                return text
+            }
+
+            if let content = dict["content"] {
+                return extractTextContent(from: content)
+            }
+        }
+
+        if let array = value as? [[String: Any]] {
+            let parts = array.compactMap { item -> String? in
+                if let text = item["text"] as? String, !text.isEmpty {
+                    return text
+                }
+                if let thinking = item["thinking"] as? String, !thinking.isEmpty {
+                    return thinking
+                }
+                if let content = item["content"] {
+                    return extractTextContent(from: content)
+                }
+                return nil
+            }
+            if !parts.isEmpty {
+                return parts.joined(separator: "\n")
+            }
         }
 
         return nil
