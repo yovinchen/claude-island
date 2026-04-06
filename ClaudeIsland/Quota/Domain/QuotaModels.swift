@@ -12,6 +12,10 @@ enum QuotaProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     case claude
     case gemini
     case copilot
+    case cursor
+    case opencode
+    case amp
+    case augment
     case kimi
     case kiro
     case jetbrains
@@ -28,6 +32,10 @@ enum QuotaProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         case .claude: return "Claude"
         case .gemini: return "Gemini"
         case .copilot: return "Copilot"
+        case .cursor: return "Cursor"
+        case .opencode: return "OpenCode"
+        case .amp: return "Amp"
+        case .augment: return "Augment"
         case .kimi: return "Kimi"
         case .kiro: return "Kiro"
         case .jetbrains: return "JetBrains AI"
@@ -42,6 +50,10 @@ enum QuotaProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         switch self {
         case .openrouter: return "OR"
         case .copilot: return "GH"
+        case .cursor: return "CS"
+        case .opencode: return "OC"
+        case .amp: return "AMP"
+        case .augment: return "AU"
         case .jetbrains: return "JB"
         case .kimiK2: return "K2"
         default: return displayName
@@ -54,6 +66,10 @@ enum QuotaProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         case .claude: return "sun.max"
         case .gemini: return "sparkle"
         case .copilot: return "person.crop.circle.badge.checkmark"
+        case .cursor: return "cursorarrow.rays"
+        case .opencode: return "curlybraces.square"
+        case .amp: return "bolt.circle"
+        case .augment: return "wand.and.stars"
         case .kimi: return "moon.stars"
         case .kiro: return "terminal"
         case .jetbrains: return "chevron.left.forwardslash.chevron.right"
@@ -71,6 +87,69 @@ enum QuotaSourceKind: String, Codable, Sendable {
     case cli
     case event
     case local
+    case web
+}
+
+enum QuotaSourcePreference: String, CaseIterable, Codable, Identifiable, Sendable {
+    case auto
+    case oauth
+    case apiKey
+    case cli
+    case local
+    case web
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .auto:
+            return String(localized: "quota.source.auto")
+        case .oauth:
+            return String(localized: "quota.source.oauth")
+        case .apiKey:
+            return String(localized: "quota.source.api_key")
+        case .cli:
+            return String(localized: "quota.source.cli")
+        case .local:
+            return String(localized: "quota.source.local")
+        case .web:
+            return String(localized: "quota.source.web")
+        }
+    }
+
+    var sourceKind: QuotaSourceKind? {
+        switch self {
+        case .auto:
+            return nil
+        case .oauth:
+            return .oauth
+        case .apiKey:
+            return .apiKey
+        case .cli:
+            return .cli
+        case .local:
+            return .local
+        case .web:
+            return .web
+        }
+    }
+
+    static func from(sourceKind: QuotaSourceKind) -> QuotaSourcePreference {
+        switch sourceKind {
+        case .oauth:
+            return .oauth
+        case .apiKey:
+            return .apiKey
+        case .cli:
+            return .cli
+        case .local:
+            return .local
+        case .web:
+            return .web
+        case .event:
+            return .auto
+        }
+    }
 }
 
 enum QuotaProviderStatus: String, Codable, Sendable {
@@ -131,6 +210,8 @@ struct QuotaDiagnostics: Equatable, Sendable {
 struct QuotaProviderDescriptor: Equatable, Sendable {
     let id: QuotaProviderID
     let sourceKind: QuotaSourceKind
+    let supportedSources: [QuotaSourceKind]
+    let cliBinaryName: String?
     let primaryLabel: String
     let secondaryLabel: String?
     let credentialHint: String
@@ -169,6 +250,14 @@ struct QuotaProviderRecord: Identifiable, Equatable, Sendable {
 
     var credentialPlaceholder: String {
         descriptor.credentialPlaceholder ?? descriptor.credentialHint
+    }
+
+    var supportsSourceSelection: Bool {
+        descriptor.supportedSources.count > 1
+    }
+
+    var supportsCLIConfiguration: Bool {
+        descriptor.cliBinaryName != nil
     }
 
     var effectiveSourceLabel: String {

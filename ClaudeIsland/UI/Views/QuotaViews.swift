@@ -12,6 +12,9 @@ struct QuotaSettingsPane: View {
     @State private var selectedProviderID: QuotaProviderID = .codex
     @State private var secretValue = ""
     @State private var loadedSecretProviderID: QuotaProviderID?
+    @State private var openCodeWorkspaceID = ""
+    @State private var sourcePreference: QuotaSourcePreference = .auto
+    @State private var cliBinaryPath = ""
 
     private var selectedRecord: QuotaProviderRecord? {
         quotaStore.record(for: selectedProviderID) ?? quotaStore.orderedRecords.first
@@ -74,9 +77,11 @@ struct QuotaSettingsPane: View {
             quotaStore.refreshIfNeeded(maxAge: 60)
             ensureSelection()
             loadSecretIfNeeded(force: true)
+            loadProviderPreferences()
         }
         .onChange(of: selectedProviderID) { _, _ in
             loadSecretIfNeeded(force: true)
+            loadProviderPreferences()
         }
         .onChange(of: quotaStore.orderedRecords.map(\.id)) { _, _ in
             ensureSelection()
@@ -170,11 +175,15 @@ struct QuotaSettingsPane: View {
                     }
 
                     if let note = record.snapshot?.note, !note.isEmpty {
-                        quotaTextBlock(title: "Notes", text: note, color: .white.opacity(0.7))
+                        quotaTextBlock(title: String(localized: "quota.notes"), text: note, color: .white.opacity(0.7))
                     }
 
                     if let error = record.latestErrorText, !error.isEmpty {
-                        quotaTextBlock(title: "Last error", text: error, color: TerminalColors.red)
+                        quotaTextBlock(title: String(localized: "quota.last_error"), text: error, color: TerminalColors.red)
+                    }
+
+                    if record.supportsSourceSelection || record.supportsCLIConfiguration {
+                        quotaConfiguration(for: record)
                     }
 
                     if record.descriptor.supportsManualSecret {
@@ -185,6 +194,10 @@ struct QuotaSettingsPane: View {
 
                     if record.id == .zai {
                         quotaZAIRegionPicker
+                    }
+
+                    if record.id == .opencode {
+                        quotaOpenCodeWorkspaceEditor
                     }
 
                     quotaActions(for: record)
@@ -261,6 +274,84 @@ struct QuotaSettingsPane: View {
         quotaTextBlock(title: String(localized: "quota.setup"), text: record.descriptor.credentialHint, color: .white.opacity(0.7))
     }
 
+    private func quotaConfiguration(for record: QuotaProviderRecord) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(String(localized: "quota.configuration"))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.8))
+
+            if record.supportsSourceSelection {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(String(localized: "quota.source_mode"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+
+                    Picker(
+                        String(localized: "quota.source_mode"),
+                        selection: Binding(
+                            get: { sourcePreference },
+                            set: { newValue in
+                                sourcePreference = newValue
+                                QuotaPreferences.setSourcePreference(newValue, for: record.id)
+                                quotaStore.userVisibleRefresh(providerID: record.id)
+                            }
+                        )
+                    ) {
+                        ForEach(sourceOptions(for: record), id: \.id) { option in
+                            Text(option.displayName).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            if let cliBinaryName = record.descriptor.cliBinaryName {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(localized: "quota.cli_binary"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+
+                    Text(String(format: String(localized: "quota.cli_binary_hint %@"), cliBinaryName))
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.45))
+
+                    TextField(String(localized: "quota.cli_binary_placeholder"), text: $cliBinaryPath)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.06))
+                        )
+                        .foregroundColor(.white.opacity(0.9))
+
+                    HStack(spacing: 10) {
+                        Button(String(localized: "quota.save_cli_path")) {
+                            QuotaPreferences.setCLIBinaryPath(
+                                cliBinaryPath.trimmingCharacters(in: .whitespacesAndNewlines),
+                                for: record.id
+                            )
+                            quotaStore.userVisibleRefresh(providerID: record.id)
+                        }
+                        .buttonStyle(SettingsButtonStyle())
+
+                        Button(String(localized: "quota.clear_cli_path")) {
+                            cliBinaryPath = ""
+                            QuotaPreferences.setCLIBinaryPath("", for: record.id)
+                            quotaStore.userVisibleRefresh(providerID: record.id)
+                        }
+                        .buttonStyle(SettingsButtonStyle(isDestructive: true))
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.05))
+        )
+    }
+
     private var quotaZAIRegionPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(String(localized: "quota.zai_region"))
@@ -317,6 +408,45 @@ struct QuotaSettingsPane: View {
         }
     }
 
+    private var quotaOpenCodeWorkspaceEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(String(localized: "quota.opencode_workspace"))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.8))
+
+            TextField(String(localized: "quota.opencode_workspace_placeholder"), text: $openCodeWorkspaceID)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white.opacity(0.06))
+                )
+                .foregroundColor(.white.opacity(0.9))
+
+            HStack(spacing: 10) {
+                Button(String(localized: "quota.save_workspace")) {
+                    QuotaPreferences.openCodeWorkspaceID = openCodeWorkspaceID.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let selectedRecord {
+                        quotaStore.userVisibleRefresh(providerID: selectedRecord.id)
+                    }
+                }
+                .buttonStyle(SettingsButtonStyle())
+
+                Button(String(localized: "quota.clear_workspace")) {
+                    openCodeWorkspaceID = ""
+                    QuotaPreferences.openCodeWorkspaceID = ""
+                }
+                .buttonStyle(SettingsButtonStyle(isDestructive: true))
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.05))
+        )
+    }
+
     private func quotaTextBlock(title: String, text: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
@@ -355,6 +485,25 @@ struct QuotaSettingsPane: View {
         }
         secretValue = quotaStore.storedSecret(for: selectedRecord.id)
         loadedSecretProviderID = selectedRecord.id
+    }
+
+    private func loadProviderPreferences() {
+        sourcePreference = QuotaPreferences.sourcePreference(for: selectedProviderID)
+        cliBinaryPath = QuotaPreferences.cliBinaryPath(for: selectedProviderID)
+
+        if selectedProviderID == .opencode {
+            openCodeWorkspaceID = QuotaPreferences.openCodeWorkspaceID
+        } else {
+            openCodeWorkspaceID = ""
+        }
+    }
+
+    private func sourceOptions(for record: QuotaProviderRecord) -> [QuotaSourcePreference] {
+        var options = record.descriptor.supportedSources.map { QuotaSourcePreference.from(sourceKind: $0) }
+        if record.supportsSourceSelection {
+            options.insert(.auto, at: 0)
+        }
+        return options
     }
 }
 

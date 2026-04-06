@@ -3,6 +3,46 @@ import XCTest
 
 @MainActor
 final class Wave2QuotaProviderTests: XCTestCase {
+    func testCursorUsageSummaryDecodesPlanAndUsage() throws {
+        let data = Data(
+            """
+            {
+              "billingCycleEnd": "2026-05-01T00:00:00Z",
+              "membershipType": "pro",
+              "individualUsage": {
+                "plan": {
+                  "used": 1500,
+                  "limit": 2000,
+                  "autoPercentUsed": 30,
+                  "apiPercentUsed": 20,
+                  "totalPercentUsed": 25
+                },
+                "onDemand": {
+                  "used": 200,
+                  "limit": 500
+                }
+              }
+            }
+            """.utf8
+        )
+
+        let summary = try JSONDecoder().decode(CursorUsageSummary.self, from: data)
+
+        XCTAssertEqual(summary.membershipType, "pro")
+        XCTAssertEqual(summary.individualUsage?.plan?.totalPercentUsed ?? 0, 25, accuracy: 0.001)
+        XCTAssertEqual(summary.individualUsage?.onDemand?.limit, 500)
+    }
+
+    func testOpenCodeWorkspaceNormalizationFindsWorkspaceID() {
+        let provider = OpenCodeQuotaProvider()
+
+        XCTAssertEqual(
+            provider._test_normalizeWorkspaceID("https://opencode.ai/workspace/wrk_abc123/billing"),
+            "wrk_abc123"
+        )
+        XCTAssertEqual(provider._test_normalizeWorkspaceID("wrk_xyz789"), "wrk_xyz789")
+    }
+
     func testCopilotUsageResponseDecodesQuotaSnapshots() throws {
         let data = Data(
             """

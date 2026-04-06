@@ -16,6 +16,24 @@ enum QuotaRuntimeSupport {
         }
     }
 
+    static func resolvedBinary(defaultBinary: String, providerID: QuotaProviderID) -> String? {
+        let overrideValue = cleaned(QuotaPreferences.cliBinaryPath(for: providerID))
+        return resolvedBinary(defaultBinary: defaultBinary, overrideValue: overrideValue)
+    }
+
+    static func resolvedBinary(defaultBinary: String, overrideValue: String?) -> String? {
+        guard let overrideValue, !overrideValue.isEmpty else {
+            return which(defaultBinary)
+        }
+
+        if overrideValue.contains("/") {
+            let expanded = NSString(string: overrideValue).expandingTildeInPath
+            return FileManager.default.isExecutableFile(atPath: expanded) ? expanded : nil
+        }
+
+        return which(overrideValue)
+    }
+
     static func envValue(_ keys: [String], fallback: String? = nil) -> String? {
         let environment = Foundation.ProcessInfo.processInfo.environment
         for key in keys {

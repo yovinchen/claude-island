@@ -307,16 +307,15 @@ private final class CodexQuotaRPCClient: @unchecked Sendable {
         }
     }
 
-    init() throws {
+    init(binaryPath: String) throws {
         var continuation: AsyncStream<Data>.Continuation!
         stdoutLineStream = AsyncStream<Data> { streamContinuation in
             continuation = streamContinuation
         }
         stdoutLineContinuation = continuation
 
-        let executable = QuotaRuntimeSupport.which("codex") ?? "codex"
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [executable, "-s", "read-only", "-a", "untrusted", "app-server"]
+        process.arguments = [binaryPath, "-s", "read-only", "-a", "untrusted", "app-server"]
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
@@ -457,15 +456,25 @@ struct CodexQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .codex)
 
     func isConfigured() -> Bool {
-        CodexQuotaCredentialsStore.hasAuthFile() || QuotaRuntimeSupport.which("codex") != nil
+        CodexQuotaCredentialsStore.hasAuthFile() || cliBinaryPath() != nil
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        switch QuotaPreferences.sourcePreference(for: .codex) {
+        case .cli:
+            return try await fetchViaRPC()
+        case .oauth:
+            let credentials = try CodexQuotaCredentialsStore.load()
+            return try await fetchViaOAuth(credentials)
+        default:
+            break
+        }
+
         if let credentials = try? CodexQuotaCredentialsStore.load() {
             do {
                 return try await fetchViaOAuth(credentials)
             } catch {
-                if QuotaRuntimeSupport.which("codex") != nil {
+                if cliBinaryPath() != nil {
                     return try await fetchViaRPC()
                 }
                 throw error
@@ -528,7 +537,11 @@ struct CodexQuotaProvider: QuotaProvider {
     }
 
     private func fetchViaRPC() async throws -> QuotaSnapshot {
-        let rpc = try CodexQuotaRPCClient()
+        guard let binaryPath = cliBinaryPath() else {
+            throw QuotaProviderError.commandFailed("codex not found.")
+        }
+
+        let rpc = try CodexQuotaRPCClient(binaryPath: binaryPath)
         defer { rpc.shutdown() }
 
         try await rpc.initialize()
@@ -595,6 +608,10 @@ struct CodexQuotaProvider: QuotaProvider {
             return nil
         }
         return QuotaRuntimeSupport.stringValue(auth["chatgpt_plan_type"])
+    }
+
+    private func cliBinaryPath() -> String? {
+        QuotaRuntimeSupport.resolvedBinary(defaultBinary: "codex", providerID: .codex)
     }
 }
 
@@ -996,7 +1013,9 @@ private enum GeminiQuotaCredentialsStore {
     }
 
     private static func extractOAuthClientCredentials() -> GeminiOAuthClient? {
-        guard let geminiPath = QuotaRuntimeSupport.which("gemini") else { return nil }
+        guard let geminiPath = QuotaRuntimeSupport.resolvedBinary(defaultBinary: "gemini", providerID: .gemini) else {
+            return nil
+        }
 
         let fileManager = FileManager.default
         var realPath = geminiPath
@@ -1234,7 +1253,7 @@ struct KiroQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .kiro)
 
     func isConfigured() -> Bool {
-        QuotaRuntimeSupport.which("kiro-cli") != nil
+        binaryPath() != nil
     }
 
     func fetch() async throws -> QuotaSnapshot {
@@ -1341,7 +1360,7 @@ struct KiroQuotaProvider: QuotaProvider {
     }
 
     private func runCommand(arguments: [String], timeout: TimeInterval, idleTimeout: TimeInterval) async throws -> KiroCLICommandResult {
-        guard let binary = QuotaRuntimeSupport.which("kiro-cli") else {
+        guard let binary = binaryPath() else {
             throw QuotaProviderError.commandFailed("kiro-cli not found.")
         }
 
@@ -1457,6 +1476,10 @@ struct KiroQuotaProvider: QuotaProvider {
                 ))
             }
         }
+    }
+
+    private func binaryPath() -> String? {
+        QuotaRuntimeSupport.resolvedBinary(defaultBinary: "kiro-cli", providerID: .kiro)
     }
 
     private func parseUsage(output: String) throws -> Snapshot {
