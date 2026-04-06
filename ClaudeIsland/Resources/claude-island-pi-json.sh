@@ -79,16 +79,18 @@ trap cleanup EXIT
 send_event "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON}"
 send_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"prompt\":$PROMPT_JSON}"
 
-PARSER='import json, pathlib, subprocess, sys
+PARSER='import json, pathlib, re, subprocess, sys
 last_path = pathlib.Path(sys.argv[1])
 stream_path = pathlib.Path(sys.argv[2])
-bridge = sys.argv[3]
-session_id = sys.argv[4]
-cwd = sys.argv[5]
+stderr_path = pathlib.Path(sys.argv[3])
+bridge = sys.argv[4]
+session_id = sys.argv[5]
+cwd = sys.argv[6]
 last_text = ""
 tool_calls = {}
 seen_pre = set()
 seen_post = set()
+ansi_re = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 def send(payload):
     if not bridge:
@@ -149,17 +151,18 @@ def emit_tool_end(tool_id, content, is_error=False):
         "error": text if is_error else None,
     })
 
-for raw in stream_path.read_text().splitlines():
-    raw = raw.strip()
+def process_line(raw):
+    global last_text
+    raw = ansi_re.sub("", raw).strip()
     if not raw:
-        continue
+        return
     try:
         obj = json.loads(raw)
     except Exception:
-        continue
+        return
 
     if not isinstance(obj, dict):
-        continue
+        return
 
     candidates = [obj.get("text"), obj.get("message"), obj.get("content")]
     message = obj.get("message")
@@ -196,6 +199,12 @@ for raw in stream_path.read_text().splitlines():
         if isinstance(value, str) and value.strip():
             last_text = value.strip()
 
+for raw in stream_path.read_text().splitlines():
+    process_line(raw)
+
+for raw in stderr_path.read_text().splitlines():
+    process_line(raw)
+
 last_path.write_text(last_text)'
 
 "$PI_BIN" --mode json -p "$PROMPT" 2>"$STDERR_FILE" | tee "$STREAM_FILE"
@@ -205,7 +214,7 @@ BRIDGE_PATH=""
 if [ -x "$BRIDGE" ]; then
   BRIDGE_PATH="$BRIDGE"
 fi
-python3 -c "$PARSER" "$LAST_FILE" "$STREAM_FILE" "$BRIDGE_PATH" "$SESSION_ID" "$PWD"
+python3 -c "$PARSER" "$LAST_FILE" "$STREAM_FILE" "$STDERR_FILE" "$BRIDGE_PATH" "$SESSION_ID" "$PWD"
 
 LAST_ASSISTANT_MESSAGE=""
 if [ -f "$LAST_FILE" ]; then

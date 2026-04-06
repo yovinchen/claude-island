@@ -186,9 +186,9 @@ for raw in stream_path.read_text().splitlines():
 last_path.write_text(last_text)'
 
 if [ "$AMP_BIN" = "$AMP_WRAPPER" ]; then
-  "$AMP_BIN" --execute --stream-json "$PROMPT" 2>"$STDERR_FILE" | tee "$STREAM_FILE"
+  "$AMP_BIN" --execute "$PROMPT" --stream-json 2>"$STDERR_FILE" | tee "$STREAM_FILE"
 else
-  env PLUGINS=all "$AMP_BIN" --execute --stream-json "$PROMPT" 2>"$STDERR_FILE" | tee "$STREAM_FILE"
+  env PLUGINS=all "$AMP_BIN" --execute "$PROMPT" --stream-json 2>"$STDERR_FILE" | tee "$STREAM_FILE"
 fi
 STATUS=$?
 
