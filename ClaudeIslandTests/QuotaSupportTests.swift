@@ -49,4 +49,19 @@ final class QuotaSupportTests: XCTestCase {
 
         XCTAssertEqual(record.summaryLine, "Unlimited")
     }
+
+    func testResolvedBinaryAcceptsExecutablePathOverride() {
+        let resolved = QuotaRuntimeSupport.resolvedBinary(defaultBinary: "missing-binary", overrideValue: "/bin/zsh")
+
+        XCTAssertEqual(resolved, "/bin/zsh")
+    }
+
+    func testResolvedBinaryRejectsMissingExecutablePathOverride() {
+        let resolved = QuotaRuntimeSupport.resolvedBinary(
+            defaultBinary: "missing-binary",
+            overrideValue: "/definitely/not/a/real/binary"
+        )
+
+        XCTAssertNil(resolved)
+    }
 }
