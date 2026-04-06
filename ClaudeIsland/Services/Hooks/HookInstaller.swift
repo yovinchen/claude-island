@@ -612,12 +612,25 @@ struct ClineHookSource: HookSource {
     var configPath: String { globalStateURL.path }
 
     var managedConfigPaths: [String] {
-        [globalStateURL.path] + Self.hookNames.map { hooksDirectoryURL.appendingPathComponent($0).path }
+        [globalStateURL.path] +
+        hookPaths(in: hooksDirectoryURL) +
+        hookPaths(in: workspaceHooksDirectoryURL)
     }
 
     private var hooksDirectoryURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents/Cline/Hooks")
+    }
+
+    private var workspaceHooksDirectoryURL: URL? {
+        let workspaceRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let clineRulesDirectory = workspaceRoot.appendingPathComponent(".clinerules")
+        let hooksDirectory = clineRulesDirectory.appendingPathComponent("hooks")
+        guard FileManager.default.fileExists(atPath: clineRulesDirectory.path) ||
+                FileManager.default.fileExists(atPath: hooksDirectory.path) else {
+            return nil
+        }
+        return hooksDirectory
     }
 
     private var globalStateURL: URL {
@@ -632,6 +645,9 @@ struct ClineHookSource: HookSource {
 
     func install(bridgePath: String) throws {
         try FileManager.default.createDirectory(at: hooksDirectoryURL, withIntermediateDirectories: true)
+        if let workspaceHooksDirectoryURL {
+            try FileManager.default.createDirectory(at: workspaceHooksDirectoryURL, withIntermediateDirectories: true)
+        }
         try FileManager.default.createDirectory(
             at: globalStateURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -639,19 +655,21 @@ struct ClineHookSource: HookSource {
 
         let command = HookInstaller.hookCommandPath() + " --source cline"
 
-        for hookName in Self.hookNames {
-            let hookURL = hooksDirectoryURL.appendingPathComponent(hookName)
-            let script = """
-            #!/bin/zsh
-            RESPONSE="$(\(command) 2>/dev/null)" || true
-            if [ -n "$RESPONSE" ]; then
-              print -r -- "$RESPONSE"
-            else
-              print -r -- '{"cancel":false,"contextModification":""}'
-            fi
-            """
-            try script.write(to: hookURL, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookURL.path)
+        for directory in hookDirectoriesForManagement() {
+            for hookName in Self.hookNames {
+                let hookURL = directory.appendingPathComponent(hookName)
+                let script = """
+                #!/bin/zsh
+                RESPONSE="$(\(command) 2>/dev/null)" || true
+                if [ -n "$RESPONSE" ]; then
+                  print -r -- "$RESPONSE"
+                else
+                  print -r -- '{"cancel":false,"contextModification":""}'
+                fi
+                """
+                try script.write(to: hookURL, atomically: true, encoding: .utf8)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookURL.path)
+            }
         }
 
         updateGlobalState()
@@ -668,14 +686,29 @@ struct ClineHookSource: HookSource {
     func isInstalled() -> Bool {
         guard hooksEnabledInGlobalState() else { return false }
 
-        return Self.hookNames.allSatisfy { hookName in
-            let path = hooksDirectoryURL.appendingPathComponent(hookName).path
-            guard FileManager.default.isExecutableFile(atPath: path),
-                  let content = try? String(contentsOfFile: path, encoding: .utf8) else {
-                return false
+        return hookDirectoriesForManagement().contains { directory in
+            Self.hookNames.allSatisfy { hookName in
+                let path = directory.appendingPathComponent(hookName).path
+                guard FileManager.default.isExecutableFile(atPath: path),
+                      let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+                    return false
+                }
+                return content.contains("--source cline")
             }
-            return content.contains("--source cline")
         }
+    }
+
+    private func hookDirectoriesForManagement() -> [URL] {
+        var directories = [hooksDirectoryURL]
+        if let workspaceHooksDirectoryURL {
+            directories.append(workspaceHooksDirectoryURL)
+        }
+        return directories
+    }
+
+    private func hookPaths(in directory: URL?) -> [String] {
+        guard let directory else { return [] }
+        return Self.hookNames.map { directory.appendingPathComponent($0).path }
     }
 
     private func hooksEnabledInGlobalState() -> Bool {

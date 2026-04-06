@@ -323,6 +323,14 @@ actor SessionStore {
                 }
             }
             return nil
+        case .cline:
+            let projectHooksDir = URL(fileURLWithPath: cwd)
+                .appendingPathComponent(".clinerules/hooks")
+                .path
+            if FileManager.default.fileExists(atPath: projectHooksDir) {
+                return "Project Cline hooks detected at .clinerules/hooks; Claude Island will manage that layer alongside your global hooks when present."
+            }
+            return nil
         case .crush:
             let path = URL(fileURLWithPath: cwd)
                 .appendingPathComponent(".crush/logs/crush.log")
