@@ -824,10 +824,33 @@ struct ClaudeQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .claude)
 
     func isConfigured() -> Bool {
-        ClaudeQuotaCredentialsStore.hasCredentials()
+        ClaudeQuotaCredentialsStore.hasCredentials() || cliBinaryPath() != nil
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        switch QuotaPreferences.sourcePreference(for: .claude) {
+        case .cli:
+            return try await fetchViaCLI()
+        case .oauth:
+            return try await fetchViaOAuth()
+        default:
+            break
+        }
+
+        if ClaudeQuotaCredentialsStore.hasCredentials() {
+            do {
+                return try await fetchViaOAuth()
+            } catch {
+                if cliBinaryPath() != nil {
+                    return try await fetchViaCLI()
+                }
+                throw error
+            }
+        }
+        return try await fetchViaCLI()
+    }
+
+    private func fetchViaOAuth() async throws -> QuotaSnapshot {
         let credentials = try ClaudeQuotaCredentialsStore.load()
         let activeCredentials = if credentials.isExpired {
             try await ClaudeQuotaCredentialsStore.refresh(credentials)
@@ -876,6 +899,54 @@ struct ClaudeQuotaProvider: QuotaProvider {
         )
     }
 
+    private func fetchViaCLI() async throws -> QuotaSnapshot {
+        guard let binaryPath = cliBinaryPath() else {
+            throw QuotaProviderError.commandFailed("claude not found.")
+        }
+
+        let snapshot = try await ClaudeCLIQuotaProbe(binaryPath: binaryPath).fetch()
+
+        func makeWindow(label: String, percentLeft: Int?, reset: String?) -> QuotaWindow? {
+            guard let percentLeft else { return nil }
+            let usedRatio = max(0, min(1, Double(100 - percentLeft) / 100.0))
+            return QuotaWindow(
+                label: label,
+                usedRatio: usedRatio,
+                detail: nil,
+                resetsAt: ClaudeCLIQuotaProbe.parseResetDate(from: reset)
+            )
+        }
+
+        return QuotaSnapshot(
+            providerID: .claude,
+            source: .cli,
+            primaryWindow: makeWindow(
+                label: descriptor.primaryLabel,
+                percentLeft: snapshot.sessionPercentLeft,
+                reset: snapshot.primaryResetDescription
+            ),
+            secondaryWindow: makeWindow(
+                label: descriptor.secondaryLabel ?? "Weekly",
+                percentLeft: snapshot.weeklyPercentLeft,
+                reset: snapshot.secondaryResetDescription
+            ),
+            tertiaryWindow: makeWindow(
+                label: "Opus",
+                percentLeft: snapshot.opusPercentLeft,
+                reset: snapshot.opusResetDescription
+            ),
+            credits: nil,
+            identity: QuotaIdentity(
+                email: snapshot.accountEmail,
+                organization: snapshot.accountOrganization,
+                plan: snapshot.loginMethod,
+                detail: nil
+            ),
+            updatedAt: Date(),
+            note: nil
+        )
+    }
+
     private func makeWindow(label: String, window: ClaudeOAuthUsageWindow) -> QuotaWindow? {
         guard let utilization = window.utilization else { return nil }
         let usedRatio = utilization > 1 ? utilization / 100.0 : utilization
@@ -894,6 +965,10 @@ struct ClaudeQuotaProvider: QuotaProvider {
             .split(separator: " ")
             .map { $0.capitalized }
             .joined(separator: " ")
+    }
+
+    private func cliBinaryPath() -> String? {
+        QuotaRuntimeSupport.resolvedBinary(defaultBinary: "claude", providerID: .claude)
     }
 }
 

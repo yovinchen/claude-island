@@ -6,7 +6,7 @@
 import Foundation
 
 enum QuotaRuntimeSupport {
-    static func which(_ binary: String) -> String? {
+    nonisolated static func which(_ binary: String) -> String? {
         switch ProcessExecutor.shared.runSync("/usr/bin/which", arguments: [binary]) {
         case .success(let output):
             let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -16,12 +16,12 @@ enum QuotaRuntimeSupport {
         }
     }
 
-    static func resolvedBinary(defaultBinary: String, providerID: QuotaProviderID) -> String? {
+    nonisolated static func resolvedBinary(defaultBinary: String, providerID: QuotaProviderID) -> String? {
         let overrideValue = cleaned(QuotaPreferences.cliBinaryPath(for: providerID))
         return resolvedBinary(defaultBinary: defaultBinary, overrideValue: overrideValue)
     }
 
-    static func resolvedBinary(defaultBinary: String, overrideValue: String?) -> String? {
+    nonisolated static func resolvedBinary(defaultBinary: String, overrideValue: String?) -> String? {
         guard let overrideValue, !overrideValue.isEmpty else {
             return which(defaultBinary)
         }
@@ -34,7 +34,7 @@ enum QuotaRuntimeSupport {
         return which(overrideValue)
     }
 
-    static func detectVersion(binaryPath: String, argumentVariants: [[String]] = [["--version"], ["version"], ["-v"]]) -> String? {
+    nonisolated static func detectVersion(binaryPath: String, argumentVariants: [[String]] = [["--version"], ["version"], ["-v"]]) -> String? {
         for arguments in argumentVariants {
             switch ProcessExecutor.shared.runSync(binaryPath, arguments: arguments) {
             case .success(let output):
@@ -54,7 +54,7 @@ enum QuotaRuntimeSupport {
         return nil
     }
 
-    static func envValue(_ keys: [String], fallback: String? = nil) -> String? {
+    nonisolated static func envValue(_ keys: [String], fallback: String? = nil) -> String? {
         let environment = Foundation.ProcessInfo.processInfo.environment
         for key in keys {
             if let value = cleaned(environment[key]) {
@@ -72,18 +72,18 @@ enum QuotaRuntimeSupport {
         return (data, httpResponse)
     }
 
-    static func jsonObject(from data: Data) throws -> [String: Any] {
+    nonisolated static func jsonObject(from data: Data) throws -> [String: Any] {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw QuotaProviderError.invalidResponse("Root JSON is not an object")
         }
         return json
     }
 
-    static func cleaned(_ raw: String?) -> String? {
+    nonisolated static func cleaned(_ raw: String?) -> String? {
         QuotaUtilities.cleaned(raw)
     }
 
-    static func stringValue(_ raw: Any?) -> String? {
+    nonisolated static func stringValue(_ raw: Any?) -> String? {
         switch raw {
         case let value as String:
             return cleaned(value)
@@ -94,7 +94,7 @@ enum QuotaRuntimeSupport {
         }
     }
 
-    static func doubleValue(_ raw: Any?) -> Double? {
+    nonisolated static func doubleValue(_ raw: Any?) -> Double? {
         switch raw {
         case let value as Double:
             return value
@@ -109,7 +109,7 @@ enum QuotaRuntimeSupport {
         }
     }
 
-    static func intValue(_ raw: Any?) -> Int? {
+    nonisolated static func intValue(_ raw: Any?) -> Int? {
         switch raw {
         case let value as Int:
             return value
@@ -122,7 +122,7 @@ enum QuotaRuntimeSupport {
         }
     }
 
-    static func firstNumber(pattern: String, in text: String) -> Double? {
+    nonisolated static func firstNumber(pattern: String, in text: String) -> Double? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return nil
         }
@@ -136,7 +136,7 @@ enum QuotaRuntimeSupport {
         return doubleValue(String(text[valueRange]))
     }
 
-    static func stripANSI(_ text: String) -> String {
+    nonisolated static func stripANSI(_ text: String) -> String {
         let ansiStripped = text.replacingOccurrences(
             of: #"\u001B\[[0-?]*[ -/]*[@-~]"#,
             with: "",
@@ -147,7 +147,7 @@ enum QuotaRuntimeSupport {
             .replacingOccurrences(of: "\r", with: "")
     }
 
-    static func relativeResetDescription(for date: Date, now: Date = Date()) -> String {
+    nonisolated static func relativeResetDescription(for date: Date, now: Date = Date()) -> String {
         let seconds = max(0, Int(date.timeIntervalSince(now)))
         if seconds < 60 {
             return "now"
@@ -166,7 +166,7 @@ enum QuotaRuntimeSupport {
         return "in \(totalMinutes)m"
     }
 
-    static func parseMonthDay(_ raw: String, now: Date = Date()) -> Date? {
+    nonisolated static func parseMonthDay(_ raw: String, now: Date = Date()) -> Date? {
         let parts = raw.split(separator: "/")
         guard parts.count == 2,
               let month = Int(parts[0]),
@@ -190,7 +190,7 @@ enum QuotaRuntimeSupport {
         return calendar.date(from: components)
     }
 
-    static func dateFromMilliseconds(_ raw: Any?) -> Date? {
+    nonisolated static func dateFromMilliseconds(_ raw: Any?) -> Date? {
         guard let value = doubleValue(raw) else { return nil }
         return Date(timeIntervalSince1970: value / 1000.0)
     }

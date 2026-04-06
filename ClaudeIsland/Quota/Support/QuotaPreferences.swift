@@ -29,12 +29,12 @@ enum QuotaZAIRegion: String, CaseIterable, Sendable {
 }
 
 enum QuotaPreferences {
-    private static let zaiRegionKey = "quota.zai.region"
-    private static let openCodeWorkspaceIDKey = "quota.opencode.workspace_id"
-    private static let sourcePreferencePrefix = "quota.source_preference."
-    private static let cliBinaryPathPrefix = "quota.cli_binary."
+    nonisolated private static let zaiRegionKey = "quota.zai.region"
+    nonisolated private static let openCodeWorkspaceIDKey = "quota.opencode.workspace_id"
+    nonisolated private static let sourcePreferencePrefix = "quota.source_preference."
+    nonisolated private static let cliBinaryPathPrefix = "quota.cli_binary."
 
-    static var zaiRegion: QuotaZAIRegion {
+    nonisolated static var zaiRegion: QuotaZAIRegion {
         get {
             guard let rawValue = UserDefaults.standard.string(forKey: zaiRegionKey),
                   let region = QuotaZAIRegion(rawValue: rawValue)
@@ -48,7 +48,7 @@ enum QuotaPreferences {
         }
     }
 
-    static var openCodeWorkspaceID: String {
+    nonisolated static var openCodeWorkspaceID: String {
         get {
             UserDefaults.standard.string(forKey: openCodeWorkspaceIDKey) ?? ""
         }
@@ -57,7 +57,7 @@ enum QuotaPreferences {
         }
     }
 
-    static func sourcePreference(for providerID: QuotaProviderID) -> QuotaSourcePreference {
+    nonisolated static func sourcePreference(for providerID: QuotaProviderID) -> QuotaSourcePreference {
         guard let rawValue = UserDefaults.standard.string(forKey: sourcePreferencePrefix + providerID.rawValue),
               let preference = QuotaSourcePreference(rawValue: rawValue)
         else {
@@ -66,15 +66,15 @@ enum QuotaPreferences {
         return preference
     }
 
-    static func setSourcePreference(_ preference: QuotaSourcePreference, for providerID: QuotaProviderID) {
+    nonisolated static func setSourcePreference(_ preference: QuotaSourcePreference, for providerID: QuotaProviderID) {
         UserDefaults.standard.set(preference.rawValue, forKey: sourcePreferencePrefix + providerID.rawValue)
     }
 
-    static func cliBinaryPath(for providerID: QuotaProviderID) -> String {
+    nonisolated static func cliBinaryPath(for providerID: QuotaProviderID) -> String {
         UserDefaults.standard.string(forKey: cliBinaryPathPrefix + providerID.rawValue) ?? ""
     }
 
-    static func setCLIBinaryPath(_ value: String, for providerID: QuotaProviderID) {
+    nonisolated static func setCLIBinaryPath(_ value: String, for providerID: QuotaProviderID) {
         UserDefaults.standard.set(value, forKey: cliBinaryPathPrefix + providerID.rawValue)
     }
 }

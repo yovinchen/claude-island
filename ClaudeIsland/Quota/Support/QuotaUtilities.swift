@@ -6,7 +6,7 @@
 import Foundation
 
 enum QuotaUtilities {
-    static func cleaned(_ raw: String?) -> String? {
+    nonisolated static func cleaned(_ raw: String?) -> String? {
         guard var value = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
             return nil
         }
@@ -22,7 +22,7 @@ enum QuotaUtilities {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    static func decodeJWTClaims(_ token: String?) -> [String: Any]? {
+    nonisolated static func decodeJWTClaims(_ token: String?) -> [String: Any]? {
         guard let token else { return nil }
         let parts = token.components(separatedBy: ".")
         guard parts.count >= 2 else { return nil }
@@ -44,11 +44,11 @@ enum QuotaUtilities {
         return json
     }
 
-    static func emailFromJWT(_ token: String?) -> String? {
+    nonisolated static func emailFromJWT(_ token: String?) -> String? {
         decodeJWTClaims(token)?["email"] as? String
     }
 
-    static func isoDate(_ raw: String?) -> Date? {
+    nonisolated static func isoDate(_ raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -59,17 +59,17 @@ enum QuotaUtilities {
         return formatter.date(from: raw)
     }
 
-    static func unixDate(seconds: Int?) -> Date? {
+    nonisolated static func unixDate(seconds: Int?) -> Date? {
         guard let seconds else { return nil }
         return Date(timeIntervalSince1970: TimeInterval(seconds))
     }
 
-    static func unixDate(milliseconds: Int?) -> Date? {
+    nonisolated static func unixDate(milliseconds: Int?) -> Date? {
         guard let milliseconds else { return nil }
         return Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000)
     }
 
-    static func stripANSI(_ value: String) -> String {
+    nonisolated static func stripANSI(_ value: String) -> String {
         value.replacingOccurrences(
             of: #"\u{001B}\[[0-9;]*[A-Za-z]"#,
             with: "",
@@ -77,7 +77,7 @@ enum QuotaUtilities {
         )
     }
 
-    static func numberString(_ value: Double?, digits: Int = 0) -> String? {
+    nonisolated static func numberString(_ value: Double?, digits: Int = 0) -> String? {
         guard let value else { return nil }
         return String(format: "%.\(digits)f", value)
     }
