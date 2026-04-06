@@ -17,10 +17,20 @@ print(json.dumps(sys.argv[1]))
 PY
 }
 
+debug_log() {
+  if [ "${CLAUDE_ISLAND_DEBUG:-}" = "1" ]; then
+    print -r -- "$1" >&2
+  fi
+}
+
 send_event() {
   local payload="$1"
   if [ -x "$BRIDGE" ]; then
-    print -rn -- "$payload" | "$BRIDGE" --source amp_cli >/dev/null 2>&1 || true
+    if ! print -rn -- "$payload" | "$BRIDGE" --source amp_cli >/dev/null 2>&1; then
+      debug_log "claude-island-amp-exec: failed to deliver event to bridge"
+    fi
+  else
+    debug_log "claude-island-amp-exec: bridge launcher not found at $BRIDGE"
   fi
 }
 
