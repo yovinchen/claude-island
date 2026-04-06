@@ -564,6 +564,7 @@ struct ClaudeHookSource: HookSource {
 // MARK: - Cline Hook Source
 
 struct ClineHookSource: HookSource {
+    private static let previousHooksEnabledKey = "_claude_island_previous_hooks_enabled"
     private static let hookNames = [
         "TaskStart",
         "TaskResume",
@@ -626,6 +627,8 @@ struct ClineHookSource: HookSource {
         for path in managedConfigPaths.dropFirst() {
             try? FileManager.default.removeItem(atPath: path)
         }
+
+        restoreGlobalState()
     }
 
     func isInstalled() -> Bool {
@@ -657,7 +660,30 @@ struct ClineHookSource: HookSource {
             json = existing
         }
 
+        if json[Self.previousHooksEnabledKey] == nil {
+            json[Self.previousHooksEnabledKey] = json["hooks-enabled"] ?? NSNull()
+        }
         json["hooks-enabled"] = true
+
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: globalStateURL)
+        }
+    }
+
+    private func restoreGlobalState() {
+        guard let data = try? Data(contentsOf: globalStateURL),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+
+        if let previous = json[Self.previousHooksEnabledKey] {
+            if previous is NSNull {
+                json.removeValue(forKey: "hooks-enabled")
+            } else {
+                json["hooks-enabled"] = previous
+            }
+            json.removeValue(forKey: Self.previousHooksEnabledKey)
+        }
 
         if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: globalStateURL)
