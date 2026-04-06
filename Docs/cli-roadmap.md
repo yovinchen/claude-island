@@ -270,6 +270,8 @@
 - `Pi` 已有最小 wrapper 原型 + json helper 原型
 - `Crush` 已开始按真实日志样本做 session 过滤和噪音压缩
 - `Pi` 已开始按真实样本兼容 `message_update / turn_end / agent_end`
+- `Pi` 已拿到 helper 路径的真实 tool-calling 回归样本
+- `Crush` 已拿到 provider 成功路径的真实日志样本
 
 **建议**
 - `Crush` 继续从当前 `./.crush/logs/crush.log` watcher 原型往结构化解析推进

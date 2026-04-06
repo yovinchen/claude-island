@@ -151,6 +151,18 @@ def emit_tool_end(tool_id, content, is_error=False):
         "error": text if is_error else None,
     })
 
+def emit_tool_execution_event(obj):
+    event_type = str(obj.get("type") or "")
+    tool_id = obj.get("toolCallId") or obj.get("tool_use_id") or obj.get("toolUseId") or obj.get("id")
+    tool_name = obj.get("toolName") or obj.get("tool_name") or obj.get("tool")
+    tool_input = obj.get("args") or obj.get("input") or obj.get("arguments")
+    if event_type == "tool_execution_start":
+        emit_tool_start(tool_id, tool_name, tool_input)
+        return
+    if event_type in ("tool_execution_end", "tool_execution_update"):
+        partial = obj.get("partialResult") if event_type == "tool_execution_update" else obj.get("result")
+        emit_tool_end(tool_id, partial or obj.get("content") or obj.get("output"), bool(obj.get("isError") or obj.get("is_error")))
+
 def remember_text(value):
     global last_text
     if isinstance(value, str) and value.strip():
@@ -226,6 +238,8 @@ def process_line(raw):
         emit_tool_start(obj.get("id") or obj.get("tool_use_id") or obj.get("toolUseId"), obj.get("name") or obj.get("tool"), obj.get("input") or obj.get("arguments"))
     elif top_type in ("tool_result", "tool-response", "tool_response", "toolResult"):
         emit_tool_end(obj.get("tool_use_id") or obj.get("toolUseId") or obj.get("id"), obj.get("content") or obj.get("output"), bool(obj.get("is_error") or obj.get("isError")))
+    elif top_type.startswith("tool_execution_"):
+        emit_tool_execution_event(obj)
 
     process_message(obj.get("message"))
 

@@ -360,6 +360,7 @@ final class CrushLogWatcher {
             lower.hasPrefix("all in-flight batches completed") ||
             lower.hasPrefix("shutdown complete") ||
             lower.hasPrefix("shutdown completed successfully") ||
+            lower.hasPrefix("generated title with small model") ||
             lower.hasPrefix("error generating title with small model") ||
             lower.hasPrefix("error generating title with large model") ||
             lower.hasPrefix("app exited") {
@@ -388,6 +389,12 @@ final class CrushLogWatcher {
         if lower.contains("prompt responded") {
             return "Crush prompt responded"
         }
+        if lower == "http response",
+           let status = firstString(json["status"]),
+           let body = firstString(json["body"]),
+           let streamedText = firstStreamedText(in: body) {
+            return "Crush HTTP response \(status): \(String(streamedText.prefix(220)))"
+        }
         if lower == "http request failed",
            let error = firstString(
             json["error"],
@@ -403,6 +410,30 @@ final class CrushLogWatcher {
             return "\(String(message.prefix(250))): \(String(error.prefix(200)))"
         }
         return String(message.prefix(500))
+    }
+
+    private func firstStreamedText(in body: String) -> String? {
+        let lines = body.components(separatedBy: .newlines)
+        for line in lines where line.hasPrefix("data: ") {
+            let payload = String(line.dropFirst(6))
+            guard let data = payload.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let candidates = json["candidates"] as? [[String: Any]] else {
+                continue
+            }
+            for candidate in candidates {
+                guard let content = candidate["content"] as? [String: Any],
+                      let parts = content["parts"] as? [[String: Any]] else {
+                    continue
+                }
+                for part in parts {
+                    if let text = part["text"] as? String, !text.isEmpty {
+                        return text
+                    }
+                }
+            }
+        }
+        return nil
     }
 
 
