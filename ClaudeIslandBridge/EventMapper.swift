@@ -316,6 +316,7 @@ enum EventMapper {
             "notification": "Notification",
             "precompact": "PreCompact",
             "posttoolusefailure": "PostToolUseFailure",
+            "stopfailure": "Notification",
             "erroroccurred": "Notification",
             // Codex desktop / notify aliases
             "taskstarted": "UserPromptSubmit",
@@ -334,10 +335,15 @@ enum EventMapper {
             "preuserprompt": "UserPromptSubmit",
             "preruncommand": "PreToolUse",
             "postruncommand": "PostToolUse",
+            "premcptooluse": "PreToolUse",
+            "postmcptooluse": "PostToolUse",
             "prereadcode": "PreToolUse",
+            "postreadcode": "PostToolUse",
             "prewritecode": "PreToolUse",
             "postwritecode": "PostToolUse",
             "postcascaderesponse": "Stop",
+            "postcascaderesponsewithtranscript": "Stop",
+            "postsetupworktree": "Notification",
             // Kiro custom agent hooks
             "agentspawn": "SessionStart",
             "sessionclear": "Notification",
@@ -493,10 +499,38 @@ enum EventMapper {
                 payload["tool_response"] = output
             }
 
+        case "pre_mcp_tool_use":
+            if let toolName = firstString(toolInfo["tool_name"], toolInfo["tool"], input["tool_name"]) {
+                payload["tool"] = toolName
+            }
+            if let toolInput = toolInfo["tool_input"] ?? input["tool_input"] {
+                payload["tool_input"] = toolInput
+            }
+
+        case "post_mcp_tool_use":
+            if let toolName = firstString(toolInfo["tool_name"], toolInfo["tool"], input["tool_name"]) {
+                payload["tool"] = toolName
+            }
+            if let toolInput = toolInfo["tool_input"] ?? input["tool_input"] {
+                payload["tool_input"] = toolInput
+            }
+            if let output = firstString(toolInfo["output"], input["output"], input["message"]) {
+                payload["tool_response"] = output
+            }
+
         case "pre_read_code":
             payload["tool"] = "Read"
             if let path = firstString(toolInfo["file_path"], toolInfo["path"]) {
                 payload["tool_input"] = ["file_path": path]
+            }
+
+        case "post_read_code":
+            payload["tool"] = "Read"
+            if let path = firstString(toolInfo["file_path"], toolInfo["path"]) {
+                payload["tool_input"] = ["file_path": path]
+            }
+            if let output = firstString(toolInfo["output"], input["output"], input["message"]) {
+                payload["tool_response"] = output
             }
 
         case "pre_write_code":
@@ -514,6 +548,19 @@ enum EventMapper {
         case "post_cascade_response":
             if let response = firstString(toolInfo["response"], input["response"], input["message"]) {
                 payload["last_assistant_message"] = response
+            }
+
+        case "post_cascade_response_with_transcript":
+            if let response = firstString(toolInfo["response"], input["response"], input["message"]) {
+                payload["last_assistant_message"] = response
+            }
+            if let transcript = toolInfo["transcript"] ?? input["transcript"] {
+                payload["message"] = stringify(transcript)
+            }
+
+        case "post_setup_worktree":
+            if let worktreePath = firstString(toolInfo["worktree_path"], toolInfo["path"], input["path"]) {
+                payload["message"] = worktreePath
             }
 
         default:

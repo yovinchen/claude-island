@@ -1415,12 +1415,17 @@ struct WindsurfHookSource: HookSource {
 
     private static let events = [
         "pre_user_prompt",
+        "post_read_code",
         "pre_run_command",
         "post_run_command",
+        "pre_mcp_tool_use",
+        "post_mcp_tool_use",
         "pre_read_code",
         "pre_write_code",
         "post_write_code",
-        "post_cascade_response"
+        "post_cascade_response",
+        "post_cascade_response_with_transcript",
+        "post_setup_worktree"
     ]
 
     func install(bridgePath: String) throws {
@@ -1559,10 +1564,13 @@ struct KimiHookSource: HookSource {
             ("UserPromptSubmit", nil),
             ("PreToolUse", 120),
             ("PostToolUse", nil),
+            ("PostToolUseFailure", nil),
             ("Notification", nil),
             ("Stop", nil),
+            ("StopFailure", nil),
             ("PreCompact", nil),
             ("PostCompact", nil),
+            ("SubagentStart", nil),
             ("SubagentStop", nil),
         ]
 
