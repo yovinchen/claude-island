@@ -19,7 +19,8 @@
   - 不再假设存在正式 tool-level log schema
 - `Windsurf`
   - 已完成 workspace/system 诊断增强
-  - 下一步才考虑更深托管
+  - 当前已补 system-level deploy mirror（`~/.claude-island/system/windsurf/hooks.json`）
+  - 下一步才考虑是否需要更强的 rollout 引导
 - `Gemini CLI`
   - 当前已补项目级 `.gemini/settings.json` 的存在时托管
 - `Pi / Crush`

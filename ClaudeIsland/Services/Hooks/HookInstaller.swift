@@ -1566,11 +1566,17 @@ struct WindsurfHookSource: HookSource {
         return workspaceHooks
     }
 
+    private var systemDeploymentMirrorURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/system/windsurf/hooks.json")
+    }
+
     private func configURLsForManagement() -> [URL] {
         var urls = [userConfigURL]
         if let workspaceConfigURL {
             urls.append(workspaceConfigURL)
         }
+        urls.append(systemDeploymentMirrorURL)
         return urls
     }
 

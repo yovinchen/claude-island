@@ -296,8 +296,12 @@ actor SessionStore {
                 .appendingPathComponent(".windsurf/hooks.json")
                 .path
             let systemPath = "/Library/Application Support/Windsurf/hooks.json"
+            let systemMirrorPath = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".claude-island/system/windsurf/hooks.json")
+                .path
             let hasWorkspace = FileManager.default.fileExists(atPath: workspacePath)
             let hasSystem = FileManager.default.fileExists(atPath: systemPath)
+            let hasSystemMirror = FileManager.default.fileExists(atPath: systemMirrorPath)
 
             if hasWorkspace && hasSystem {
                 return "Workspace Windsurf hooks config detected at .windsurf/hooks.json and will be managed alongside your user-level hooks when present; system-level hooks were also found at /Library/Application Support/Windsurf/hooks.json and may still override lower layers."
@@ -307,6 +311,9 @@ actor SessionStore {
             }
             if hasSystem {
                 return "System-level Windsurf hooks config detected at /Library/Application Support/Windsurf/hooks.json; it may override or extend your user/workspace hooks."
+            }
+            if hasSystemMirror {
+                return "A deployable Windsurf system-hooks mirror is available at ~/.claude-island/system/windsurf/hooks.json for IT or MDM rollout."
             }
             return nil
         case .copilot:
