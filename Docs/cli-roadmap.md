@@ -177,6 +177,7 @@
 **当前已完成**
 - source / installer / UI / watcher / repair 已接通
 - deny 走 `stderr + exit 2`
+- 已补更多 Cascade / MCP / transcript 相关事件映射
 
 **剩余缺口**
 - 仍是首版事件覆盖
@@ -191,6 +192,7 @@
 **当前已完成**
 - `config.toml` hooks 管理
 - 基础审批返回
+- 官方 13 事件中的更多生命周期事件已补入 managed block
 
 **剩余缺口**
 - 还未联调 ACP
