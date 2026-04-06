@@ -46,6 +46,7 @@ Crush **当前已部分支持**。Claude Island 现在已提供最小 CLI 包装
 - 当前已新增最小 `CrushLogWatcher`，会优先尝试把 JSON 日志行识别成 `PreToolUse` / `PostToolUse` / `PostToolUseFailure`，识别不了时再回退成 `Notification`。
 - 基于本机真实日志样本，当前 watcher 也会优先锁定 non-interactive run 的 `session_id`，并压缩 `buffer(...)` / shutdown / skill bootstrap 这类高噪音日志，只保留更有用的 prompt / request failure 观察信号。
 - 对于真实样本里重复出现的 title-generation 降级错误，当前 watcher 也会当作噪音压掉，避免和更关键的 `HTTP request failed` 重复刷屏。
+- 当前还已经拿到一份 provider 正常成功返回的真实日志样本：它证明 `HTTP Response 200 OK` 与 PostHog/shutdown 收尾日志会大量刷屏，因此这类成功/遥测噪音现在也会被优先压掉。
 - 基于 provider 正常成功路径的真实日志样本，当前 watcher 也已经开始从 `HTTP Response` 的 SSE body 里提炼第一段模型文本，避免成功场景下只剩抽象的 `prompt responded`。
 - 对于同一成功样本里较短、明显属于标题生成阶段的 `HTTP Response`，当前 watcher 也会优先压掉，尽量只保留主回答对应的成功信号。
 

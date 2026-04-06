@@ -67,11 +67,12 @@ fi
 PROMPT_JSON="$(escape_json "$PROMPT")"
 CWD_JSON="$(escape_json "$PWD")"
 LAST_FILE="$(mktemp -t claude-island-pi-json.last.XXXXXX)"
+ERROR_FILE="$(mktemp -t claude-island-pi-json.error.XXXXXX)"
 STDERR_FILE="$(mktemp -t claude-island-pi-json.stderr.XXXXXX)"
 STREAM_FILE="$(mktemp -t claude-island-pi-json.stream.XXXXXX)"
 
 cleanup() {
-  rm -f "$LAST_FILE" "$STDERR_FILE" "$STREAM_FILE"
+  rm -f "$LAST_FILE" "$ERROR_FILE" "$STDERR_FILE" "$STREAM_FILE"
 }
 
 trap cleanup EXIT
@@ -81,12 +82,14 @@ send_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$SESSION_
 
 PARSER='import json, pathlib, re, subprocess, sys
 last_path = pathlib.Path(sys.argv[1])
-stream_path = pathlib.Path(sys.argv[2])
-stderr_path = pathlib.Path(sys.argv[3])
-bridge = sys.argv[4]
-session_id = sys.argv[5]
-cwd = sys.argv[6]
+error_path = pathlib.Path(sys.argv[2])
+stream_path = pathlib.Path(sys.argv[3])
+stderr_path = pathlib.Path(sys.argv[4])
+bridge = sys.argv[5]
+session_id = sys.argv[6]
+cwd = sys.argv[7]
 last_text = ""
+result_error = ""
 tool_calls = {}
 seen_pre = set()
 seen_post = set()
@@ -163,6 +166,11 @@ def emit_tool_execution_event(obj):
         partial = obj.get("partialResult") if event_type == "tool_execution_update" else obj.get("result")
         emit_tool_end(tool_id, partial or obj.get("content") or obj.get("output"), bool(obj.get("isError") or obj.get("is_error")))
 
+def record_error(value):
+    global result_error
+    if isinstance(value, str) and value.strip():
+        result_error = value.strip()
+
 def remember_text(value):
     global last_text
     if isinstance(value, str) and value.strip():
@@ -204,6 +212,8 @@ def process_message(message):
     if not isinstance(message, dict):
         return
     role = str(message.get("role") or "").lower()
+    if str(message.get("stopReason") or "").lower() == "error":
+        record_error(message.get("errorMessage"))
     if role in ("toolresult", "tool_result", "tool-result"):
         emit_tool_end(
             message.get("toolCallId") or message.get("tool_use_id") or message.get("toolUseId") or message.get("id"),
@@ -234,12 +244,22 @@ def process_line(raw):
     remember_text(obj.get("content") if isinstance(obj.get("content"), str) else None)
 
     top_type = obj.get("type")
+    if top_type == "auto_retry_start":
+        result_error = ""
+    elif top_type == "auto_retry_end":
+        if obj.get("success") is False:
+            record_error(obj.get("finalError") or obj.get("errorMessage"))
+        elif obj.get("success") is True:
+            result_error = ""
     if top_type in ("tool_use", "tool-call", "tool_call", "toolCall"):
         emit_tool_start(obj.get("id") or obj.get("tool_use_id") or obj.get("toolUseId"), obj.get("name") or obj.get("tool"), obj.get("input") or obj.get("arguments"))
     elif top_type in ("tool_result", "tool-response", "tool_response", "toolResult"):
         emit_tool_end(obj.get("tool_use_id") or obj.get("toolUseId") or obj.get("id"), obj.get("content") or obj.get("output"), bool(obj.get("is_error") or obj.get("isError")))
     elif top_type.startswith("tool_execution_"):
         emit_tool_execution_event(obj)
+    if str(obj.get("stopReason") or "").lower() == "error":
+        record_error(obj.get("errorMessage"))
+    record_error(obj.get("errorMessage"))
 
     process_message(obj.get("message"))
 
@@ -271,7 +291,8 @@ for raw in stream_path.read_text().splitlines():
 for raw in stderr_path.read_text().splitlines():
     process_line(raw)
 
-last_path.write_text(last_text)'
+last_path.write_text(last_text)
+error_path.write_text(result_error)'
 
 "$PI_BIN" --mode json -p "$PROMPT" 2>"$STDERR_FILE" | tee "$STREAM_FILE"
 STATUS=$?
@@ -280,20 +301,28 @@ BRIDGE_PATH=""
 if [ -x "$BRIDGE" ]; then
   BRIDGE_PATH="$BRIDGE"
 fi
-python3 -c "$PARSER" "$LAST_FILE" "$STREAM_FILE" "$STDERR_FILE" "$BRIDGE_PATH" "$SESSION_ID" "$PWD"
+python3 -c "$PARSER" "$LAST_FILE" "$ERROR_FILE" "$STREAM_FILE" "$STDERR_FILE" "$BRIDGE_PATH" "$SESSION_ID" "$PWD"
 
 LAST_ASSISTANT_MESSAGE=""
 if [ -f "$LAST_FILE" ]; then
   LAST_ASSISTANT_MESSAGE="$(cat "$LAST_FILE")"
 fi
 
-if [ $STATUS -eq 0 ]; then
+RESULT_ERROR=""
+if [ -f "$ERROR_FILE" ]; then
+  RESULT_ERROR="$(cat "$ERROR_FILE")"
+fi
+
+if [ $STATUS -eq 0 ] && [ -z "$RESULT_ERROR" ]; then
   if [ -n "$LAST_ASSISTANT_MESSAGE" ]; then
     LAST_JSON="$(escape_json "$LAST_ASSISTANT_MESSAGE")"
     send_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"last_assistant_message\":$LAST_JSON}"
   else
     send_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"message\":\"Pi json mode finished\"}"
   fi
+elif [ -n "$RESULT_ERROR" ]; then
+  notify_error "$RESULT_ERROR"
+  send_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SESSION_ID\",\"cwd\":$CWD_JSON,\"message\":\"Pi json mode reported an execution error\"}"
 else
   ERROR_OUTPUT="$(cat "$STDERR_FILE")"
   if [ -n "$ERROR_OUTPUT" ]; then

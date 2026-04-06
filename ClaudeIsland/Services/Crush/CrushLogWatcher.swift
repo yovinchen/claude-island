@@ -360,13 +360,18 @@ final class CrushLogWatcher {
             lower.hasPrefix("all in-flight batches completed") ||
             lower.hasPrefix("shutdown complete") ||
             lower.hasPrefix("shutdown completed successfully") ||
+            lower.hasPrefix("shutdown timeout:") ||
+            lower.hasPrefix("shutdown timeout exceeded") ||
+            lower.hasPrefix("failed to flush posthog events") ||
+            lower.hasPrefix("messages dropped: shutdown timeout") ||
+            lower.hasPrefix("sending request - post \"https://data.charm.land/batch/\":") ||
             lower.hasPrefix("generated title with small model") ||
             lower.hasPrefix("error generating title with small model") ||
             lower.hasPrefix("error generating title with large model") ||
             lower.hasPrefix("app exited") {
             return true
         }
-        if lower == "http request" {
+        if lower == "http request" || lower == "http response" {
             return true
         }
         if lower.hasPrefix("buffer (") &&

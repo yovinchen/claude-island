@@ -47,6 +47,7 @@ Pi Coding Agent **当前已部分支持**。Claude Island 现在已提供最小 
 - 当前 `pi-json` 已开始 best-effort 提炼 `tool_use / tool_result` 等常见结构，用于回放基础工具事件。
 - 基于本机真实样本，当前 parser 也已经开始兼容 `message_update / message_end / turn_end / agent_end` 这类真实 JSON 流形状，并会同时扫描 `stdout + stderr` 里的 JSON 行。
 - 基于 `~/.pi/agent/sessions/*.jsonl` 的真实历史样本，当前 parser 也已经兼容 `type:"toolCall"` 与 `role:"toolResult"` 这类 camelCase 形状，并避免把 user prompt 误当成最终 assistant 文本。
+- 基于一次真实 helper-path 运行（通过 `PI_CODING_AGENT_DIR=/tmp/...` 复用现有 auth/settings），当前 parser 也开始识别 `stopReason:"error"` / `errorMessage` / `auto_retry_end.finalError` 这类“退出码仍为 0，但流内明确失败”的 JSON 形状。
 - 基于 helper 路径的真实 tool-calling 样本，当前 parser 也开始兼容顶层 `tool_execution_start / tool_execution_update / tool_execution_end` 事件。
 
 **可实施方案**
