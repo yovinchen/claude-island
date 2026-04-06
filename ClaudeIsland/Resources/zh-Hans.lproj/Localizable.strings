@@ -78,6 +78,12 @@
 "quota.credential" = "凭据";
 "quota.save_key" = "保存密钥";
 "quota.clear_key" = "清除密钥";
+"quota.import_session" = "导入会话";
+"quota.import_session_hint" = "打开内置登录窗口并捕获这个 provider 当前的网页会话。";
+"quota.import_session_success" = "会话已导入，正在刷新额度…";
+"quota.import_session_cancelled" = "已取消会话导入。";
+"quota.import_session_failed %@" = "会话导入失败：%@";
+"quota.import_session_unsupported" = "这个 provider 暂不支持内置会话导入。";
 "quota.setup" = "配置说明";
 "quota.configuration" = "配置";
 "quota.source_mode" = "刷新来源";

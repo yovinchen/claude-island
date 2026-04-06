@@ -7,6 +7,11 @@ import AppKit
 import SwiftUI
 
 struct QuotaSettingsPane: View {
+    private struct SessionImportFeedback {
+        let message: String
+        let color: Color
+    }
+
     @ObservedObject private var quotaStore = QuotaStore.shared
 
     @State private var selectedProviderID: QuotaProviderID = .codex
@@ -15,6 +20,8 @@ struct QuotaSettingsPane: View {
     @State private var openCodeWorkspaceID = ""
     @State private var sourcePreference: QuotaSourcePreference = .auto
     @State private var cliBinaryPath = ""
+    @State private var importingSessionProviderID: QuotaProviderID?
+    @State private var sessionImportFeedback: SessionImportFeedback?
 
     private var selectedRecord: QuotaProviderRecord? {
         quotaStore.record(for: selectedProviderID) ?? quotaStore.orderedRecords.first
@@ -60,6 +67,7 @@ struct QuotaSettingsPane: View {
         .onChange(of: selectedProviderID) { _, _ in
             loadSecretIfNeeded(force: true)
             loadProviderPreferences()
+            sessionImportFeedback = nil
         }
         .onChange(of: quotaStore.orderedRecords.map(\.id)) { _, _ in
             ensureSelection()
@@ -424,6 +432,30 @@ struct QuotaSettingsPane: View {
                 }
             }
 
+            if QuotaWebSessionImportRunner.supports(providerID: record.id) {
+                providerSettingsBlock(
+                    title: String(localized: "quota.import_session"),
+                    caption: String(localized: "quota.import_session_hint")
+                ) {
+                    if importingSessionProviderID == record.id {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Button(String(localized: "quota.import_session")) {
+                            Task { await importSession(for: record.id) }
+                        }
+                        .buttonStyle(SettingsButtonStyle())
+                    }
+                }
+
+                if let sessionImportFeedback {
+                    Text(sessionImportFeedback.message)
+                        .font(.system(size: 12))
+                        .foregroundColor(sessionImportFeedback.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if record.id == .opencode {
                 providerSettingsBlock(
                     title: String(localized: "quota.opencode_workspace"),
@@ -731,6 +763,38 @@ struct QuotaSettingsPane: View {
             options.insert(.auto, at: 0)
         }
         return options
+    }
+
+    @MainActor
+    private func importSession(for providerID: QuotaProviderID) async {
+        importingSessionProviderID = providerID
+        defer { importingSessionProviderID = nil }
+
+        let result = await QuotaWebSessionImportRunner.run(providerID: providerID)
+        switch result {
+        case .success:
+            loadSecretIfNeeded(force: true)
+            quotaStore.userVisibleRefresh(providerID: providerID)
+            sessionImportFeedback = SessionImportFeedback(
+                message: String(localized: "quota.import_session_success"),
+                color: TerminalColors.green
+            )
+        case .cancelled:
+            sessionImportFeedback = SessionImportFeedback(
+                message: String(localized: "quota.import_session_cancelled"),
+                color: .white.opacity(0.5)
+            )
+        case .failed(let message):
+            sessionImportFeedback = SessionImportFeedback(
+                message: String(format: String(localized: "quota.import_session_failed %@"), message),
+                color: TerminalColors.red
+            )
+        case .unsupported:
+            sessionImportFeedback = SessionImportFeedback(
+                message: String(localized: "quota.import_session_unsupported"),
+                color: TerminalColors.red
+            )
+        }
     }
 }
 

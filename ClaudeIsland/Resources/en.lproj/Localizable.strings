@@ -78,6 +78,12 @@
 "quota.credential" = "Credential";
 "quota.save_key" = "Save Key";
 "quota.clear_key" = "Clear Key";
+"quota.import_session" = "Import Session";
+"quota.import_session_hint" = "Open an in-app login window and capture the current web session for this provider.";
+"quota.import_session_success" = "Session imported. Refreshing quota…";
+"quota.import_session_cancelled" = "Session import cancelled.";
+"quota.import_session_failed %@" = "Session import failed: %@";
+"quota.import_session_unsupported" = "This provider does not support in-app session import.";
 "quota.setup" = "Setup";
 "quota.configuration" = "Configuration";
 "quota.source_mode" = "Refresh source";
