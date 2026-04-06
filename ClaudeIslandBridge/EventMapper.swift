@@ -197,6 +197,10 @@ enum EventMapper {
         if let name = input["toolName"] as? String { return name }
         if let name = nested(input, "tool_info", "tool_name") as? String { return name }
         if let name = nested(input, "tool_info", "toolName") as? String { return name }
+        if let name = nested(input, "toolResult", "toolName") as? String { return name }
+        if let name = nested(input, "tool_result", "toolName") as? String { return name }
+        if let name = nested(input, "toolResult", "tool") as? String { return name }
+        if let name = nested(input, "tool_result", "tool") as? String { return name }
         if let tool = input["tool"] as? [String: Any], let name = tool["name"] as? String { return name }
         if let name = input["tool"] as? String { return name }
         return nil
@@ -488,13 +492,27 @@ enum EventMapper {
         firstString(
             input["error"],
             input["error_message"],
+            input["stderr"],
+            nested(input, "toolResult", "error"),
+            nested(input, "toolResult", "stderr"),
+            nested(input, "tool_result", "error"),
+            nested(input, "tool_result", "stderr"),
             nested(input, "tool_response", "error"),
             nested(input, "toolResponse", "error")
         )
     }
 
     private static func extractToolResponse(from input: [String: Any]) -> String? {
-        if let direct = firstString(input["tool_response"], input["toolResponse"]) {
+        if let direct = firstString(
+            input["tool_response"],
+            input["toolResponse"],
+            input["output"],
+            input["stdout"],
+            nested(input, "toolResult", "output"),
+            nested(input, "toolResult", "stdout"),
+            nested(input, "tool_result", "output"),
+            nested(input, "tool_result", "stdout")
+        ) {
             return direct
         }
 
