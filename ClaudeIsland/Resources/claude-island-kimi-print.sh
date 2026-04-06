@@ -87,6 +87,9 @@ stream_path = pathlib.Path(sys.argv[3])
 stderr_path = pathlib.Path(sys.argv[4])
 last_text = ""
 result_error = ""
+tool_calls = {}
+seen_pre = set()
+seen_post = set()
 
 def remember_text(value):
     global last_text
@@ -97,6 +100,62 @@ def remember_error(value):
     global result_error
     if isinstance(value, str) and value.strip():
         result_error = value.strip()
+
+def stringify(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict) and item.get("text"):
+                parts.append(item["text"])
+            elif item is not None:
+                parts.append(str(item))
+        return "\\n".join(part for part in parts if part)
+    if value is None:
+        return ""
+    return json.dumps(value, ensure_ascii=False)
+
+def send(payload):
+    import subprocess
+    bridge = pathlib.Path.home()/".claude-island/bin/claude-island-bridge-launcher.sh"
+    if not bridge.exists():
+        return
+    try:
+        subprocess.run([str(bridge), "--source", "kimi_cli"], input=json.dumps(payload).encode(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except Exception:
+        pass
+
+def emit_tool_start(tool_id, name, tool_input):
+    if not tool_id or tool_id in seen_pre:
+        return
+    seen_pre.add(tool_id)
+    tool_calls[tool_id] = {"name": name, "input": tool_input}
+    send({
+        "hook_event_name": "PreToolUse",
+        "session_id": "'"$SESSION_ID"'",
+        "cwd": "'"$PWD"'",
+        "tool_name": name,
+        "tool_input": tool_input,
+        "tool_use_id": tool_id,
+    })
+
+def emit_tool_end(tool_id, content, is_error=False):
+    if not tool_id or tool_id in seen_post:
+        return
+    seen_post.add(tool_id)
+    meta = tool_calls.get(tool_id, {})
+    text = stringify(content)
+    send({
+        "hook_event_name": "PostToolUseFailure" if is_error else "PostToolUse",
+        "session_id": "'"$SESSION_ID"'",
+        "cwd": "'"$PWD"'",
+        "tool_name": meta.get("name"),
+        "tool_input": meta.get("input"),
+        "tool_use_id": tool_id,
+        "tool_response": text,
+        "error": text if is_error else None,
+    })
 
 for raw in stream_path.read_text().splitlines():
     raw = raw.strip()
@@ -119,8 +178,39 @@ for raw in stream_path.read_text().splitlines():
                     continue
                 if item.get("type") == "text" and item.get("text"):
                     texts.append(item["text"])
-                elif item.get("type") == "tool_call":
-                    remember_text(item.get("text"))
+            if texts:
+                remember_text("\\n".join(texts))
+
+        tool_calls_raw = obj.get("tool_calls")
+        if isinstance(tool_calls_raw, list):
+            for item in tool_calls_raw:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") != "function":
+                    continue
+                tool_id = item.get("id")
+                function = item.get("function") if isinstance(item.get("function"), dict) else {}
+                tool_name = function.get("name")
+                tool_input = function.get("arguments")
+                if isinstance(tool_input, str):
+                    try:
+                        tool_input = json.loads(tool_input)
+                    except Exception:
+                        tool_input = {"raw": tool_input}
+                emit_tool_start(tool_id, tool_name, tool_input)
+
+    if obj.get("role") == "tool":
+        emit_tool_end(obj.get("tool_call_id"), obj.get("content"), False)
+
+    if obj.get("role") == "assistant":
+        content = obj.get("content")
+        if isinstance(content, list):
+            texts = []
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "text" and item.get("text"):
+                    texts.append(item["text"])
             if texts:
                 remember_text("\\n".join(texts))
 

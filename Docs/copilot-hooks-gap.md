@@ -42,6 +42,16 @@ GitHub Copilot CLI（2026-02 GA）官方支持以下 Hook 事件：
 | `stop` | ✅ | 任务完成（非官方事件名，依赖 Copilot 是否实际触发） |
 | EventMapper 事件标准化 | ✅ | `sessionstart`→`SessionStart` 等 camelCase→PascalCase 映射 |
 
+## 本机真实样本补充
+
+- 当前已经拿到一份真实 hooks/transcript 样本：`~/.copilot/session-state/*/events.jsonl`
+- 该样本已确认本机 Copilot 会真实触发：
+  - `userPromptSubmitted`
+  - `sessionStart`
+  - `agentStop`
+  - `sessionEnd`
+- 同一样本也证明了 `hook.start` / `hook.end` 会把 `success`、`error.message`、`hookType` 等信息写入 events.jsonl，可作为后续联调依据。
+
 ## 尚未实现
 
 ### 1. `preToolUse` 审批流（已补首版）
