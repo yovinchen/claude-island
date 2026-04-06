@@ -82,7 +82,7 @@ GitHub Copilot CLI（2026-02 GA）官方支持以下 Hook 事件：
 **当前行为**: 仅管理全局 `~/.copilot/config.json`。
 
 **当前补充**:
-- 运行时现在会检测项目级 `.github/hooks/hooks.json`，并提示它可能覆盖用户级 hooks。
+- 运行时现在会检测项目级 `.github/hooks/` 目录下的 JSON hooks 文件，并提示它们可能覆盖用户级 hooks。
 
 **改进方案**: 后续再决定是否支持扫描和注入项目级 `.github/hooks/` 目录中的配置文件。
 

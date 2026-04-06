@@ -294,11 +294,17 @@ actor SessionStore {
             }
             return nil
         case .copilot:
-            let path = URL(fileURLWithPath: cwd)
-                .appendingPathComponent(".github/hooks/hooks.json")
-                .path
-            if FileManager.default.fileExists(atPath: path) {
-                return "Project Copilot hooks config detected at .github/hooks/hooks.json; it may override your user-level hooks."
+            let hooksDir = URL(fileURLWithPath: cwd)
+                .appendingPathComponent(".github/hooks")
+            if let files = try? FileManager.default.contentsOfDirectory(
+                at: hooksDir,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) {
+                let jsonFiles = files.filter { $0.pathExtension.lowercased() == "json" }
+                if !jsonFiles.isEmpty {
+                    return "Project Copilot hooks detected under .github/hooks/ (\(jsonFiles.count) JSON file\(jsonFiles.count == 1 ? "" : "s")); they may override your user-level hooks."
+                }
             }
             return nil
         case .crush:
