@@ -21,7 +21,7 @@ struct OnboardingView: View {
 
     private let allTools: [SessionSource] = [
         .claude, .cline, .codexCLI, .gemini, .cursor, .windsurf, .kimiCLI, .kiroCLI,
-        .ampCLI, .opencode, .copilot,
+        .ampCLI, .opencode, .copilot, .pi, .crush,
         .qoder, .droid, .codebuddy
     ]
 

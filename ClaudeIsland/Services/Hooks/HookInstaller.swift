@@ -51,6 +51,16 @@ struct HookInstaller {
         AmpHookSource(),
         OpenCodeHookSource(),
         CopilotHookSource(),
+        HelperOnlySource(
+            sourceType: .pi,
+            displayName: "Pi Coding Agent",
+            helperNames: ["claude-island-pi", "claude-island-pi-json"]
+        ),
+        HelperOnlySource(
+            sourceType: .crush,
+            displayName: "Crush",
+            helperNames: ["claude-island-crush"]
+        ),
         QoderHookSource(),
         DroidHookSource(),
         CodeBuddyHookSource(),
@@ -710,6 +720,44 @@ struct ClineHookSource: HookSource {
         if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: globalStateURL)
         }
+    }
+}
+
+private struct HelperOnlySource: HookSource {
+    let sourceType: SessionSource
+    let displayName: String
+    let helperNames: [String]
+
+    var configPath: String {
+        helperPaths.first ?? helperRoot.appendingPathComponent(".placeholder").path
+    }
+
+    var managedConfigPaths: [String] {
+        helperPaths
+    }
+
+    private var helperRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin")
+    }
+
+    private var helperPaths: [String] {
+        helperNames.map { helperRoot.appendingPathComponent($0).path }
+    }
+
+    func install(bridgePath: String) throws {
+        // Helpers are installed centrally by installLauncher(); enabling this
+        // source only needs the app-level helper refresh.
+    }
+
+    func uninstall() throws {
+        // Keep helper scripts managed centrally; disabling the wrapper-based
+        // source only changes app-level affordances and status.
+    }
+
+    func isInstalled() -> Bool {
+        guard AppSettings.isHookEnabled(for: sourceType) else { return false }
+        return helperPaths.allSatisfy { FileManager.default.fileExists(atPath: $0) }
     }
 }
 

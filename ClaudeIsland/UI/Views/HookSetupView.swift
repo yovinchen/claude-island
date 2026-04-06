@@ -20,7 +20,7 @@ struct HookSetupView: View {
 
     private let allTools: [SessionSource] = [
         .claude, .cline, .codexCLI, .gemini, .cursor, .windsurf, .kimiCLI, .kiroCLI,
-        .ampCLI, .opencode, .copilot,
+        .ampCLI, .opencode, .copilot, .pi, .crush,
         .qoder, .droid, .codebuddy
     ]
 
@@ -282,6 +282,8 @@ struct ToolSetupRow: View {
         case .kimiCLI: return "~/.kimi/config.toml"
         case .kiroCLI: return "~/.kiro/agents/claude-island.json"
         case .ampCLI: return "~/.config/amp/plugins/claude-island.ts"
+        case .pi: return "~/.claude-island/bin/claude-island-pi + claude-island-pi-json"
+        case .crush: return "~/.claude-island/bin/claude-island-crush"
         case .opencode: return "~/.config/opencode/plugins/"
         case .copilot: return "~/.copilot/config.json"
         case .qoder: return "~/.qoder/settings.json"
