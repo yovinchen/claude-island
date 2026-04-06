@@ -560,6 +560,35 @@ struct QuotaSettingsPane: View {
     }
 
     private func providerDetectionText(for record: QuotaProviderRecord) -> String {
+        switch record.id {
+        case .cursor:
+            if let binary = QuotaRuntimeSupport.which("cursor"),
+               let version = QuotaRuntimeSupport.detectProviderVersion(providerID: .cursor, binaryPath: binary)
+            {
+                return version
+            }
+            if let version = QuotaRuntimeSupport.appBundleVersion(appName: "Cursor") {
+                return version
+            }
+            return String(localized: "quota.not_detected")
+        case .opencode:
+            if let binary = QuotaRuntimeSupport.which("opencode"),
+               let version = QuotaRuntimeSupport.detectProviderVersion(providerID: .opencode, binaryPath: binary)
+            {
+                return version
+            }
+            if let binary = QuotaRuntimeSupport.which("opencode"),
+               let version = QuotaRuntimeSupport.nodePackageVersionNearBinary(binaryPath: binary, packageDirectoryName: "opencode-ai")
+            {
+                return version
+            }
+            return String(localized: "quota.not_detected")
+        case .jetbrains:
+            return JetBrainsIDEDetector.detectLatestIDE()?.displayName ?? String(localized: "quota.not_detected")
+        default:
+            break
+        }
+
         if let cliBinaryName = record.descriptor.cliBinaryName {
             if let resolved = QuotaRuntimeSupport.resolvedBinary(defaultBinary: cliBinaryName, providerID: record.id) {
                 if let version = QuotaRuntimeSupport.detectProviderVersion(providerID: record.id, binaryPath: resolved) {

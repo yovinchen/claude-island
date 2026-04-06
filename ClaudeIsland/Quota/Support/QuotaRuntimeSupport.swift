@@ -34,21 +34,14 @@ enum QuotaRuntimeSupport {
         return which(overrideValue)
     }
 
-    nonisolated static func detectVersion(binaryPath: String, argumentVariants: [[String]] = [["--version"], ["version"], ["-v"]]) -> String? {
+    nonisolated static func detectVersion(
+        binaryPath: String,
+        argumentVariants: [[String]] = [["--version"], ["version"], ["-v"]],
+        timeout: TimeInterval = 2.0
+    ) -> String? {
         for arguments in argumentVariants {
-            switch ProcessExecutor.shared.runSync(binaryPath, arguments: arguments) {
-            case .success(let output):
-                let cleanedOutput = stripANSI(output)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if let line = cleanedOutput
-                    .split(whereSeparator: \.isNewline)
-                    .map({ String($0).trimmingCharacters(in: .whitespacesAndNewlines) })
-                    .first(where: { !$0.isEmpty })
-                {
-                    return line
-                }
-            case .failure:
-                continue
+            if let line = runVersionCommand(binaryPath: binaryPath, arguments: arguments, timeout: timeout) {
+                return line
             }
         }
         return nil
@@ -63,6 +56,10 @@ enum QuotaRuntimeSupport {
             variants = [["--version"], ["-v"]]
         case .kiro:
             variants = [["--version"], ["version"]]
+        case .opencode:
+            variants = [["--version"], ["version"], ["-v"]]
+        case .amp:
+            variants = [["--version"], ["version"], ["-v"]]
         case .codex:
             variants = [["--version"], ["version"], ["-v"]]
         default:
@@ -70,23 +67,23 @@ enum QuotaRuntimeSupport {
         }
 
         for arguments in variants {
-            switch ProcessExecutor.shared.runSync(binaryPath, arguments: arguments) {
-            case .success(let output):
-                let cleanedOutput = stripANSI(output)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if let line = cleanedOutput
-                    .split(whereSeparator: \.isNewline)
-                    .map({ String($0).trimmingCharacters(in: .whitespacesAndNewlines) })
-                    .first(where: { !$0.isEmpty }),
-                   let normalized = normalizeVersionLine(providerID: providerID, line: line)
-                {
-                    return normalized
-                }
-            case .failure:
-                continue
+            if let line = runVersionCommand(binaryPath: binaryPath, arguments: arguments, timeout: 2.0),
+               let normalized = normalizeVersionLine(providerID: providerID, line: line)
+            {
+                return normalized
             }
         }
-        return nil
+
+        switch providerID {
+        case .cursor:
+            return appBundleVersion(appName: "Cursor")
+        case .opencode:
+            return nodePackageVersionNearBinary(binaryPath: binaryPath, packageDirectoryName: "opencode-ai")
+        case .jetbrains:
+            return JetBrainsIDEDetector.detectLatestIDE()?.displayName
+        default:
+            return nil
+        }
     }
 
     nonisolated static func envValue(_ keys: [String], fallback: String? = nil) -> String? {
@@ -230,6 +227,48 @@ enum QuotaRuntimeSupport {
         return Date(timeIntervalSince1970: value / 1000.0)
     }
 
+    nonisolated static func appBundleVersion(appName: String, applicationsDirectory: String = "/Applications") -> String? {
+        let path = "\(applicationsDirectory)/\(appName).app/Contents/Info.plist"
+        guard let plist = NSDictionary(contentsOfFile: path) as? [String: Any] else {
+            return nil
+        }
+        return stringValue(plist["CFBundleShortVersionString"] ?? plist["CFBundleVersion"])
+    }
+
+    nonisolated static func nodePackageVersionNearBinary(binaryPath: String, packageDirectoryName: String) -> String? {
+        let binaryURL = URL(fileURLWithPath: binaryPath)
+        let fileManager = FileManager.default
+
+        var candidates: [URL] = []
+        if let symlinkDestination = try? fileManager.destinationOfSymbolicLink(atPath: binaryPath) {
+            let resolved = symlinkDestination.hasPrefix("/")
+                ? URL(fileURLWithPath: symlinkDestination)
+                : binaryURL.deletingLastPathComponent().appendingPathComponent(symlinkDestination)
+            candidates.append(resolved)
+        }
+        candidates.append(binaryURL)
+
+        for candidate in candidates {
+            var current = candidate.deletingLastPathComponent()
+            for _ in 0..<6 {
+                let packageJSON = current.appendingPathComponent("package.json")
+                if current.lastPathComponent == packageDirectoryName,
+                   let version = packageJSONVersion(at: packageJSON.path)
+                {
+                    return version
+                }
+
+                let nestedPackageJSON = current.appendingPathComponent(packageDirectoryName).appendingPathComponent("package.json")
+                if let version = packageJSONVersion(at: nestedPackageJSON.path) {
+                    return version
+                }
+
+                current.deleteLastPathComponent()
+            }
+        }
+        return nil
+    }
+
     nonisolated private static func normalizeVersionLine(providerID: QuotaProviderID, line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -261,9 +300,69 @@ enum QuotaRuntimeSupport {
         return trimmed
     }
 
+    nonisolated private static func packageJSONVersion(at path: String) -> String? {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
+        }
+        return stringValue(json["version"])
+    }
+
+    nonisolated private static func runVersionCommand(binaryPath: String, arguments: [String], timeout: TimeInterval) -> String? {
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.arguments = arguments
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.standardInput = nil
+
+        let exitSemaphore = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in
+            exitSemaphore.signal()
+        }
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        let didExit = exitSemaphore.wait(timeout: .now() + timeout) == .success
+        if !didExit {
+            if process.isRunning {
+                process.terminate()
+                _ = exitSemaphore.wait(timeout: .now() + 0.5)
+            }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+                _ = exitSemaphore.wait(timeout: .now() + 1.0)
+            }
+        }
+
+        let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
+        let merged = (String(data: stdoutData, encoding: .utf8) ?? "")
+            + "\n"
+            + (String(data: stderrData, encoding: .utf8) ?? "")
+        let cleanedOutput = stripANSI(merged).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return cleanedOutput
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
+    }
+
     #if DEBUG
     nonisolated static func _test_normalizeVersionLine(providerID: QuotaProviderID, line: String) -> String? {
         normalizeVersionLine(providerID: providerID, line: line)
+    }
+
+    nonisolated static func _test_packageJSONVersion(path: String) -> String? {
+        packageJSONVersion(at: path)
     }
     #endif
 }

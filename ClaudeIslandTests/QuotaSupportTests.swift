@@ -83,4 +83,15 @@ final class QuotaSupportTests: XCTestCase {
 
         XCTAssertEqual(version, "1.2.3")
     }
+
+    func testPackageJSONVersionReadsVersionField() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("package.json")
+        try Data(#"{"version":"1.2.3"}"#.utf8).write(to: fileURL)
+
+        let version = QuotaRuntimeSupport._test_packageJSONVersion(path: fileURL.path)
+
+        XCTAssertEqual(version, "1.2.3")
+    }
 }
