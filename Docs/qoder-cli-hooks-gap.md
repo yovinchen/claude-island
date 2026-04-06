@@ -28,11 +28,11 @@
 2. 官方 `cli/hooks` 文档显示 Qoder CLI 的 hooks 能力比当前实现更多。
 3. 这意味着 “Qoder 已支持” 只对 IDE hooks 近似成立，**对 `qodercli` 仍然不能算已支持**。
 
-## 建议补齐方向
+## 当前决策
 
-1. 新增 `SessionSource.qoderCLI`，与现有 `qoder` 分开。
-2. 针对 CLI 的配置路径、事件列表、stdout 响应格式单独实现安装器。
-3. README 中把 `Qoder` 和 `Qoder CLI` 拆开标注，避免误判。
+1. 当前 **不拆** `SessionSource.qoderCLI`。
+2. README 继续把 `Qoder CLI` 单独列为未接入对象，用于表达能力边界，而不是代码层已有独立 source。
+3. 只有在后续确认 CLI 与 IDE 存在稳定且不同的配置入口时，才重新评估 source 拆分。
 
 ## 结论
 
@@ -47,9 +47,9 @@ Qoder CLI **当前不应视为已支持**。虽然仓库里已有 `Qoder` 集成
 - 因为 `.qoder` 已在 UI、repair、displayName 体系里存在，新增 `qoder_cli` 更像 source 拆分，而不是从零开始。
 
 **最小实现方案**
-1. 新增 `SessionSource.qoderCLI`，不要继续把 CLI 和 IDE 共用一个 source。
-2. 把现有 Qoder 的 stdout 审批逻辑复用到 CLI source。
-3. 再按官方 CLI 事件表补 SessionStart/End、PermissionRequest、PreCompact 等差异项。
+1. 继续保留现有 `qoder` source 代表 IDE / extension 路线。
+2. 若后续证实 CLI 配置入口稳定，再从当前 `qoder` 审批逻辑抽一层出来复用。
+3. 在真正拆分前，不把未落地的 `qoder_cli` 放进代码枚举和 UI。
 
 **主要阻塞**
-- 阻塞点是“当前 Qoder 实现语义不够区分 CLI 与 IDE”，不是协议完全缺失。
+- 当前阻塞点是“配置入口是否足够稳定到值得拆 source”，而不是协议完全缺失。

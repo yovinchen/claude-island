@@ -53,8 +53,6 @@ struct SourceIcon: View {
             CodeBuddyPixelIcon(size: size)
         case .qoder:
             QoderPixelIcon(size: size)
-        case .qoderCLI:
-            QoderPixelIcon(size: size)
         case .droid:
             DroidPixelIcon(size: size)
         case .windsurf:
