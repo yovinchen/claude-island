@@ -20,6 +20,8 @@
 - `Windsurf`
   - 已完成 workspace/system 诊断增强
   - 下一步才考虑更深托管
+- `Gemini CLI`
+  - 当前已补项目级 `.gemini/settings.json` 的存在时托管
 - `Pi / Crush`
   - helper 已进入 auto-repair / watcher 链路
 - `Amp CLI`

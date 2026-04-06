@@ -1289,77 +1289,112 @@ struct GeminiHookSource: HookSource {
     var displayName: String { "Gemini CLI" }
 
     var configPath: String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".gemini/settings.json").path
+        userConfigURL.path
+    }
+
+    var managedConfigPaths: [String] {
+        configURLsForManagement().map(\.path)
     }
 
     func install(bridgePath: String) throws {
-        let configURL = URL(fileURLWithPath: configPath)
-        try? FileManager.default.createDirectory(
-            at: configURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
+        HookInstaller.installLauncher()
+        let command = "\(HookInstaller.hookCommandPath()) --source gemini"
 
-        var json: [String: Any] = [:]
-        if let data = try? Data(contentsOf: configURL),
-           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            json = existing
-        }
+        for configURL in configURLsForManagement() {
+            try? FileManager.default.createDirectory(
+                at: configURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
 
-        var hooks = json["hooks"] as? [String: Any] ?? [:]
-        removeClaudeIslandHooks(from: &hooks)
-
-        let command = "\(bridgePath) --source gemini"
-
-        for event in Self.events {
-            let hookCommand: [String: Any] = ["type": "command", "command": command]
-
-            var entry: [String: Any] = ["hooks": [hookCommand]]
-            if let matcher = event.matcher {
-                entry["matcher"] = matcher
+            var json: [String: Any] = [:]
+            if let data = try? Data(contentsOf: configURL),
+               let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                json = existing
             }
 
-            if var existingEntries = hooks[event.name] as? [[String: Any]] {
-                existingEntries.append(entry)
-                hooks[event.name] = existingEntries
-            } else {
-                hooks[event.name] = [entry]
+            var hooks = json["hooks"] as? [String: Any] ?? [:]
+            removeClaudeIslandHooks(from: &hooks)
+
+            for event in Self.events {
+                let hookCommand: [String: Any] = ["type": "command", "command": command]
+
+                var entry: [String: Any] = ["hooks": [hookCommand]]
+                if let matcher = event.matcher {
+                    entry["matcher"] = matcher
+                }
+
+                if var existingEntries = hooks[event.name] as? [[String: Any]] {
+                    existingEntries.append(entry)
+                    hooks[event.name] = existingEntries
+                } else {
+                    hooks[event.name] = [entry]
+                }
             }
-        }
 
-        json["hooks"] = hooks
+            json["hooks"] = hooks
 
-        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
-            try data.write(to: configURL)
+            if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+                try data.write(to: configURL)
+            }
         }
     }
 
     func uninstall() throws {
-        let configURL = URL(fileURLWithPath: configPath)
-        guard let data = try? Data(contentsOf: configURL),
-              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var hooks = json["hooks"] as? [String: Any] else { return }
+        for configURL in configURLsForManagement() {
+            guard let data = try? Data(contentsOf: configURL),
+                  var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  var hooks = json["hooks"] as? [String: Any] else { continue }
 
-        removeClaudeIslandHooks(from: &hooks)
+            removeClaudeIslandHooks(from: &hooks)
 
-        if hooks.isEmpty { json.removeValue(forKey: "hooks") } else { json["hooks"] = hooks }
+            if hooks.isEmpty { json.removeValue(forKey: "hooks") } else { json["hooks"] = hooks }
 
-        if let updated = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
-            try updated.write(to: configURL)
+            if let updated = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+                try updated.write(to: configURL)
+            }
         }
     }
 
     func isInstalled() -> Bool {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = json["hooks"] as? [String: Any] else { return false }
+        for configURL in configURLsForManagement() {
+            guard let data = try? Data(contentsOf: configURL),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let hooks = json["hooks"] as? [String: Any] else { continue }
 
-        return hooks.values.contains { value in
-            if let entries = value as? [[String: Any]] {
-                return entries.contains(where: Self.isClaudeIslandHookEntry)
+            let hasManagedHook = hooks.values.contains { value in
+                if let entries = value as? [[String: Any]] {
+                    return entries.contains(where: Self.isClaudeIslandHookEntry)
+                }
+                return false
             }
-            return false
+
+            if hasManagedHook {
+                return true
+            }
         }
+        return false
+    }
+
+    private var userConfigURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".gemini/settings.json")
+    }
+
+    private var projectConfigURL: URL? {
+        let projectConfigURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".gemini/settings.json")
+        guard FileManager.default.fileExists(atPath: projectConfigURL.path) else {
+            return nil
+        }
+        return projectConfigURL
+    }
+
+    private func configURLsForManagement() -> [URL] {
+        var urls = [userConfigURL]
+        if let projectConfigURL {
+            urls.append(projectConfigURL)
+        }
+        return urls
     }
 
     private func removeClaudeIslandHooks(from hooks: inout [String: Any]) {

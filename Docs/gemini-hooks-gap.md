@@ -11,13 +11,12 @@
 | `GeminiHookSource` | ✅ | 已支持写入 Gemini hooks 配置 |
 | 事件归一化 | ✅ | `BeforeAgent` / `BeforeTool` / `AfterTool` / `AfterAgent` 等已映射 |
 | `PermissionRequest` | ❌ | 官方本身无独立 PermissionRequest |
-| 项目级配置诊断 | ✅ | 新 Gemini 会话会提示工作区 `.gemini/settings.json` 可能覆盖用户级 hooks |
+| 项目级配置诊断 | ✅ | 新 Gemini 会话会提示工作区 `.gemini/settings.json`，且在该文件存在时会一并纳入受管安装 |
 
 ## 已知剩余 gap
 
 1. 仍需持续核对 Gemini 原生事件名，避免把 Claude 风格事件写回 Gemini 配置。
-2. 尚未覆盖 `BeforeModel` / `AfterModel` / `BeforeToolSelection` 这类 Gemini 独有生命周期。
-3. README 里对 Gemini 的能力说明需要继续与实现保持同步。
+2. README 里对 Gemini 的能力说明需要继续与实现保持同步。
 
 ## 结论
 
@@ -32,8 +31,8 @@ Gemini CLI **当前属于已支持对象**，但仍有 Gemini 专属事件与项
 - UI、repair、source 列表已完整包含 `.gemini`，后续只是在既有 source 上补事件。
 
 **最小实现方案**
-1. 继续补 `BeforeModel` / `AfterModel` / `BeforeToolSelection` 的映射与字段提取。
-2. 后续如有必要，再评估把项目级 `.gemini/settings.json` 纳入更深层的诊断或受管路径。
+1. 继续补 Gemini 专属事件的字段提取与展示细节。
+2. 当前项目级 `.gemini/settings.json` 已在存在时纳入受管路径；后续仅再评估 system 级 `/Library/Application Support/GeminiCli/settings.json` 是否值得托管。
 3. 保持 Gemini 为“无独立 PermissionRequest”的模型，不要勉强对齐 Claude。
 
 **主要阻塞**

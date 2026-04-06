@@ -288,7 +288,7 @@ actor SessionStore {
                 .appendingPathComponent(".gemini/settings.json")
                 .path
             if FileManager.default.fileExists(atPath: path) {
-                return "Project Gemini config detected at .gemini/settings.json; it may override your user-level hooks."
+                return "Project Gemini config detected at .gemini/settings.json; Claude Island now manages that layer alongside your user-level hooks when present."
             }
             return nil
         case .windsurf:

@@ -276,7 +276,7 @@ struct ToolSetupRow: View {
         case .claude: return "~/.claude/settings.json"
         case .cline: return "~/Documents/Cline/Hooks + ~/.cline/data/globalState.json (+ managed .clinerules/hooks when present, or $CLINE_DIR/data/globalState.json)"
         case .codexCLI: return "~/.codex/hooks.json + ~/.codex/config.toml"
-        case .gemini: return "~/.gemini/settings.json or .gemini/settings.json"
+        case .gemini: return "~/.gemini/settings.json (+ managed .gemini/settings.json when present)"
         case .cursor: return "~/.cursor/hooks.json or .cursor/hooks.json"
         case .windsurf: return "~/.codeium/windsurf/hooks.json (+ managed .windsurf/hooks.json when present / diagnose-only /Library/Application Support/Windsurf/hooks.json)"
         case .kimiCLI: return "~/.kimi/config.toml (+ ~/.claude-island/bin/claude-island-kimi-print for print-mode fallback)"
