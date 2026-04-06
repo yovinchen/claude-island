@@ -5,7 +5,7 @@
 
 import Foundation
 
-private enum SavedProviderTokenResolver {
+enum SavedProviderTokenResolver {
     static func token(for providerID: QuotaProviderID, envKeys: [String]) -> String? {
         let stored = QuotaSecretStore.read(account: QuotaProviderRegistry.secretAccountName(for: providerID))
         return QuotaRuntimeSupport.envValue(envKeys, fallback: stored)

@@ -61,6 +61,20 @@ enum QuotaProviderRegistry {
             sortPriority: 2
         ),
         QuotaProviderDescriptor(
+            id: .kimi,
+            sourceKind: .apiKey,
+            primaryLabel: "Weekly",
+            secondaryLabel: "5h limit",
+            credentialHint: "Uses KIMI_AUTH_TOKEN or a saved kimi-auth token",
+            credentialPlaceholder: "Paste kimi-auth token…",
+            supportsManualSecret: true,
+            defaultEnabled: true,
+            refreshInterval: 300,
+            dashboardURL: "https://www.kimi.com/code/console",
+            statusURL: nil,
+            sortPriority: 3
+        ),
+        QuotaProviderDescriptor(
             id: .kiro,
             sourceKind: .cli,
             primaryLabel: "Credits",
@@ -72,7 +86,21 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://app.kiro.dev/account/usage",
             statusURL: "https://health.aws.amazon.com/health/status",
-            sortPriority: 3
+            sortPriority: 4
+        ),
+        QuotaProviderDescriptor(
+            id: .jetbrains,
+            sourceKind: .local,
+            primaryLabel: "Current",
+            secondaryLabel: nil,
+            credentialHint: "Auto-detects JetBrains IDE quota files from local configuration.",
+            credentialPlaceholder: nil,
+            supportsManualSecret: false,
+            defaultEnabled: true,
+            refreshInterval: 300,
+            dashboardURL: nil,
+            statusURL: nil,
+            sortPriority: 5
         ),
         QuotaProviderDescriptor(
             id: .openrouter,
@@ -86,7 +114,7 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://openrouter.ai/settings/credits",
             statusURL: "https://status.openrouter.ai",
-            sortPriority: 4
+            sortPriority: 6
         ),
         QuotaProviderDescriptor(
             id: .warp,
@@ -100,7 +128,7 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://docs.warp.dev/reference/cli/api-keys",
             statusURL: nil,
-            sortPriority: 5
+            sortPriority: 7
         ),
         QuotaProviderDescriptor(
             id: .kimiK2,
@@ -114,7 +142,7 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://kimi-k2.ai/my-credits",
             statusURL: nil,
-            sortPriority: 6
+            sortPriority: 8
         ),
         QuotaProviderDescriptor(
             id: .zai,
@@ -128,7 +156,7 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://z.ai/manage-apikey/subscription",
             statusURL: nil,
-            sortPriority: 7
+            sortPriority: 9
         ),
     ]
 
@@ -142,8 +170,12 @@ enum QuotaProviderRegistry {
                 provider = ClaudeQuotaProvider()
             case .gemini:
                 provider = GeminiQuotaProvider()
+            case .kimi:
+                provider = KimiQuotaProvider()
             case .kiro:
                 provider = KiroQuotaProvider()
+            case .jetbrains:
+                provider = JetBrainsQuotaProvider()
             case .openrouter:
                 provider = OpenRouterQuotaProvider()
             case .warp:

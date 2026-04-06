@@ -11,7 +11,9 @@ enum QuotaProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     case codex
     case claude
     case gemini
+    case kimi
     case kiro
+    case jetbrains
     case openrouter
     case warp
     case kimiK2 = "kimi_k2"
@@ -24,7 +26,9 @@ enum QuotaProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         case .codex: return "Codex"
         case .claude: return "Claude"
         case .gemini: return "Gemini"
+        case .kimi: return "Kimi"
         case .kiro: return "Kiro"
+        case .jetbrains: return "JetBrains AI"
         case .openrouter: return "OpenRouter"
         case .warp: return "Warp"
         case .kimiK2: return "Kimi K2"
@@ -35,6 +39,7 @@ enum QuotaProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     var shortName: String {
         switch self {
         case .openrouter: return "OR"
+        case .jetbrains: return "JB"
         case .kimiK2: return "K2"
         default: return displayName
         }
@@ -45,7 +50,9 @@ enum QuotaProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         case .codex: return "triangle.3d"
         case .claude: return "sun.max"
         case .gemini: return "sparkle"
+        case .kimi: return "moon.stars"
         case .kiro: return "terminal"
+        case .jetbrains: return "chevron.left.forwardslash.chevron.right"
         case .openrouter: return "network"
         case .warp: return "paperplane"
         case .kimiK2: return "creditcard"
@@ -59,6 +66,7 @@ enum QuotaSourceKind: String, Codable, Sendable {
     case apiKey
     case cli
     case event
+    case local
 }
 
 enum QuotaProviderStatus: String, Codable, Sendable {
