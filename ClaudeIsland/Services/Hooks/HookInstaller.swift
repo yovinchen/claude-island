@@ -1932,11 +1932,24 @@ struct CopilotHookSource: HookSource {
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
         let command = "\(bridgePath) --source copilot"
-        let hookEntry: [String: Any] = ["type": "command", "command": command]
+        let events: [(String, Int?)] = [
+            ("sessionStart", nil),
+            ("sessionEnd", nil),
+            ("preToolUse", 120),
+            ("postToolUse", nil),
+            ("postToolUseFailure", nil),
+            ("userPromptSubmitted", nil),
+            ("errorOccurred", nil),
+            ("preCompact", nil),
+            ("notification", nil),
+            ("stop", nil),
+        ]
 
-        let events = ["sessionStart", "sessionEnd", "preToolUse", "postToolUse", "postToolUseFailure", "userPromptSubmitted", "errorOccurred", "preCompact", "notification", "stop"]
-
-        for event in events {
+        for (event, timeoutSec) in events {
+            var hookEntry: [String: Any] = ["type": "command", "command": command]
+            if let timeoutSec {
+                hookEntry["timeoutSec"] = timeoutSec
+            }
             if var existing = hooks[event] as? [[String: Any]] {
                 let hasOur = existing.contains { ($0["command"] as? String)?.contains("claude-island") == true }
                 if !hasOur {

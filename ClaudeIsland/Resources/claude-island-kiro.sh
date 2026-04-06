@@ -25,6 +25,9 @@ for ARG in "${ARGS[@]}"; do
     --help|-h|help|version|--version)
       exec "$KIRO_BIN" "$@"
       ;;
+    --agent=*|-a=*)
+      exec "$KIRO_BIN" "$@"
+      ;;
   esac
 done
 
