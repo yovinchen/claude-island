@@ -166,14 +166,14 @@ def process_content_items(content):
                 texts.append(str(item))
             continue
         item_type = item.get("type")
-        if item_type in ("tool_use", "tool-call", "tool_call"):
+        if item_type in ("tool_use", "tool-call", "tool_call", "toolCall"):
             emit_tool_start(
                 item.get("id") or item.get("tool_use_id") or item.get("toolUseId"),
                 item.get("name") or item.get("tool"),
                 item.get("input") or item.get("arguments"),
             )
             continue
-        if item_type in ("tool_result", "tool-response", "tool_response"):
+        if item_type in ("tool_result", "tool-response", "tool_response", "toolResult"):
             emit_tool_end(
                 item.get("tool_use_id") or item.get("toolUseId") or item.get("id"),
                 item.get("content") or item.get("output"),
@@ -200,9 +200,10 @@ def process_message(message):
         )
         return
 
-    remember_text(message.get("text"))
+    if role == "assistant":
+        remember_text(message.get("text"))
     texts = process_content_items(message.get("content"))
-    if texts:
+    if role == "assistant" and texts:
         remember_text("\\n".join(texts))
 
 def process_line(raw):
@@ -221,9 +222,9 @@ def process_line(raw):
     remember_text(obj.get("content") if isinstance(obj.get("content"), str) else None)
 
     top_type = obj.get("type")
-    if top_type in ("tool_use", "tool-call", "tool_call"):
+    if top_type in ("tool_use", "tool-call", "tool_call", "toolCall"):
         emit_tool_start(obj.get("id") or obj.get("tool_use_id") or obj.get("toolUseId"), obj.get("name") or obj.get("tool"), obj.get("input") or obj.get("arguments"))
-    elif top_type in ("tool_result", "tool-response", "tool_response"):
+    elif top_type in ("tool_result", "tool-response", "tool_response", "toolResult"):
         emit_tool_end(obj.get("tool_use_id") or obj.get("toolUseId") or obj.get("id"), obj.get("content") or obj.get("output"), bool(obj.get("is_error") or obj.get("isError")))
 
     process_message(obj.get("message"))

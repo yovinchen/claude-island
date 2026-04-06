@@ -360,6 +360,8 @@ final class CrushLogWatcher {
             lower.hasPrefix("all in-flight batches completed") ||
             lower.hasPrefix("shutdown complete") ||
             lower.hasPrefix("shutdown completed successfully") ||
+            lower.hasPrefix("error generating title with small model") ||
+            lower.hasPrefix("error generating title with large model") ||
             lower.hasPrefix("app exited") {
             return true
         }
