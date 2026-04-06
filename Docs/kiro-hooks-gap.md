@@ -54,7 +54,8 @@ Kiro **当前处于部分支持状态**。Claude Island 已能生成 `claude-isl
 3. 当前会同步安装 `~/.claude-island/bin/claude-island-kiro` wrapper，简化 `--agent claude-island` 的使用方式。
 4. 当前 wrapper 已尊重 `--agent foo`、`--agent=foo`、`-a foo`、`-a=foo` 以及 `--help/--version`，避免覆盖用户显式意图。
 5. 当前 wrapper 也会打上 `CLAUDE_ISLAND_KIRO_WRAPPER=1`，运行时可据此诊断会话是否经由推荐入口启动。
-6. 后续若要补强，再决定是否支持自动设置默认 agent。
+6. 当前 `KiroHookSource.managedConfigPaths` 也已把 `claude-island-kiro` wrapper 纳入 repair / watcher 链路，helper 丢失时可通过统一 launcher 刷新恢复。
+7. 后续若要补强，再决定是否支持自动设置默认 agent。
 
 **主要阻塞**
 - 当前最大阻塞不是 hooks 骨架，而是产品策略：是否允许 Claude Island 自动改写 Kiro 的默认 agent 选择。

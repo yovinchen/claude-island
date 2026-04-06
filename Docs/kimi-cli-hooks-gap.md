@@ -54,8 +54,9 @@ Kimi CLI **现已完成 hooks 首版接入**。当前通过 `config.toml` 的受
 4. 当前 `EventMapper` 已继续补 `error_message / error_type / agent_name / response / title / body / sink / trigger / reason` 等字段提取，让 `StopFailure`、`Subagent*`、`Notification`、`PostCompact` 这类事件在 UI 中更可读。
 5. 当前还会同步安装 `~/.claude-island/bin/claude-island-kimi-print`，作为 `kimi --print --output-format stream-json` 的最小 helper 入口。
 6. 这个 helper 当前会桥接 `SessionStart`、`UserPromptSubmit`、`Stop` 和基础错误态，并保留原始 stream-json 输出。
-7. 设置说明当前也已明确 `~/.kimi/config.toml` 是默认入口，但用户仍可能通过 `--config-file` / `--config` 偏离默认路径。
-8. ACP 继续单独作为第二阶段，不和 hooks 首版耦合。
+7. 当前 `KimiHookSource.managedConfigPaths` 也已把 `claude-island-kimi-print` helper 纳入 repair / watcher 链路，helper 丢失时可通过统一 launcher 刷新恢复。
+8. 设置说明当前也已明确 `~/.kimi/config.toml` 是默认入口，但用户仍可能通过 `--config-file` / `--config` 偏离默认路径。
+9. ACP 继续单独作为第二阶段，不和 hooks 首版耦合。
 
 **主要阻塞**
 - 当前主要阻塞只剩 ACP 路线，以及更完整的事件覆盖和真实联调验证。

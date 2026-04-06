@@ -74,7 +74,7 @@
 | Cursor | ✅ | ✅ | ✅ | ✅ | — | 正式 hooks source |
 | Windsurf | ✅ | ✅ | ✅ | ✅ | ⚠️ | 已补更多 Cascade / MCP 事件映射 |
 | CodeBuddy | ✅ | ✅ | ✅ | ✅ | — | 正式 hooks source |
-| Kiro | ✅ | ✅ | ✅ | — | ⚠️ | 依赖 helper / custom agent，可用性仍需文案补强 |
+| Kiro | ✅ | ✅ | ✅ | — | ⚠️ | helper 与 custom agent 现在都进入 auto-repair / watcher |
 | Lingma | — | — | — | — | — | docs-only |
 
 ### CLI / Desktop
@@ -89,8 +89,8 @@
 | Copilot CLI | ✅ | ✅ | ✅ | ✅ | ⚠️ | payload fallback / `modifiedArgs` 原型已接入，且已开始兼容本机 JSON 输出事件形状 |
 | OpenCode | ✅ | ✅ | ✅ | ✅ | ✅ | JS plugin + tool/result 提取 |
 | Droid | ✅ | ✅ | ✅ | ✅ | — | 正式 hooks source |
-| Kimi CLI | ✅ | ✅ | ✅ | — | ⚠️ | hooks 仍是主入口，同时已有 `kimi-print` helper 作为最小 print-mode fallback |
-| Amp CLI | ✅ | ✅ | ✅ | — | ✅ | plugin + `amp-exec` + `amp-stream` |
+| Kimi CLI | ✅ | ✅ | ✅ | — | ⚠️ | hooks 仍是主入口，`kimi-print` helper 现在也进入 auto-repair / watcher |
+| Amp CLI | ✅ | ✅ | ✅ | — | ✅ | plugin + `amp-exec` + `amp-stream`，helper 现已进入 auto-repair / watcher |
 | Qoder CLI | — | — | — | — | — | docs-only |
 | Pi Coding Agent | ✅ | ✅ | ✅ | — | ✅ | helper 脚本现已进入 auto-repair / watcher |
 | Crush | ✅ | ✅ | ✅ | — | ✅ | helper 脚本现已进入 auto-repair / watcher；日志仍是高层解析 |

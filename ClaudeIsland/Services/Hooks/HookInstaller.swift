@@ -1568,7 +1568,17 @@ struct KimiHookSource: HookSource {
     private let blockStart = "# claude-island-kimi-hooks:start"
     private let blockEnd = "# claude-island-kimi-hooks:end"
 
+    var managedConfigPaths: [String] {
+        [configPath, helperRoot.appendingPathComponent("claude-island-kimi-print").path]
+    }
+
+    private var helperRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin")
+    }
+
     func install(bridgePath: String) throws {
+        HookInstaller.installLauncher()
         let configURL = URL(fileURLWithPath: configPath)
         try? FileManager.default.createDirectory(
             at: configURL.deletingLastPathComponent(),
@@ -1657,7 +1667,17 @@ struct KiroHookSource: HookSource {
             .appendingPathComponent(".kiro/agents/claude-island.json").path
     }
 
+    var managedConfigPaths: [String] {
+        [configPath, helperRoot.appendingPathComponent("claude-island-kiro").path]
+    }
+
+    private var helperRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin")
+    }
+
     func install(bridgePath: String) throws {
+        HookInstaller.installLauncher()
         let configURL = URL(fileURLWithPath: configPath)
         try? FileManager.default.createDirectory(
             at: configURL.deletingLastPathComponent(),
@@ -1723,7 +1743,22 @@ struct AmpHookSource: HookSource {
             .appendingPathComponent(".config/amp/plugins/claude-island.ts").path
     }
 
+    var managedConfigPaths: [String] {
+        [
+            configPath,
+            helperRoot.appendingPathComponent("claude-island-amp").path,
+            helperRoot.appendingPathComponent("claude-island-amp-exec").path,
+            helperRoot.appendingPathComponent("claude-island-amp-stream").path
+        ]
+    }
+
+    private var helperRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin")
+    }
+
     func install(bridgePath: String) throws {
+        HookInstaller.installLauncher()
         let configURL = URL(fileURLWithPath: configPath)
         try? FileManager.default.createDirectory(
             at: configURL.deletingLastPathComponent(),
