@@ -184,7 +184,7 @@ struct NotchMenuView: View {
                     icon: "star",
                     label: String(localized: "menu.star_github")
                 ) {
-                    if let url = URL(string: "https://github.com/farouqaldori/claude-island") {
+                    if let url = URL(string: "https://github.com/yovinchen/claude-island") {
                         NSWorkspace.shared.open(url)
                     }
                 }

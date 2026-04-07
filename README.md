@@ -5,11 +5,11 @@
     macOS Notch 悬浮窗应用 — 实时监控 Claude Code、Codex、Gemini、Cursor 等 AI 编程工具
     <br />
     <br />
-    <a href="https://github.com/farouqaldori/claude-island/releases/latest" target="_blank" rel="noopener noreferrer">
-      <img src="https://img.shields.io/github/v/release/farouqaldori/claude-island?style=rounded&color=white&labelColor=000000&label=release" alt="Release Version" />
+    <a href="https://github.com/yovinchen/claude-island/releases/latest" target="_blank" rel="noopener noreferrer">
+      <img src="https://img.shields.io/github/v/release/yovinchen/claude-island?style=rounded&color=white&labelColor=000000&label=release" alt="Release Version" />
     </a>
-    <a href="#" target="_blank" rel="noopener noreferrer">
-      <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/farouqaldori/claude-island/total?style=rounded&color=white&labelColor=000000">
+    <a href="https://github.com/yovinchen/claude-island/releases" target="_blank" rel="noopener noreferrer">
+      <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/yovinchen/claude-island/total?style=rounded&color=white&labelColor=000000">
     </a>
   </p>
 </div>
@@ -42,14 +42,14 @@
 
 ### 直接下载
 
-从 [Releases](https://github.com/farouqaldori/claude-island/releases/latest) 下载最新 `.dmg` 文件，拖入 `/Applications` 即可。
+从 [Releases](https://github.com/yovinchen/claude-island/releases/latest) 下载最新 `.dmg` 文件，拖入 `/Applications` 即可。
 
 ### 从源码构建
 
 #### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/farouqaldori/claude-island.git
+git clone https://github.com/yovinchen/claude-island.git
 cd claude-island
 ```
 
@@ -669,6 +669,14 @@ Claude Island 使用 Mixpanel 进行匿名使用统计：
 
 不收集任何个人数据或对话内容。
 
+## 仓库归属与许可说明
+
+- 当前仓库由 `yovinchen/claude-island` 独立维护，README、发布链接和仓库入口均以当前仓库为准
+- 本项目继续采用 Apache 2.0 发布，保留上游与第三方依赖的适用版权、归属与许可证说明
+- 本仓库包含基于既有 Apache 2.0 开源代码演化而来的内容；历史贡献的版权仍归各自作者所有
+- 新增或后续修改部分的版权归对应贡献者所有
+- 第三方组件与额外 notice 见 [NOTICE](NOTICE) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+
 ## 许可证
 
-Apache 2.0
+Apache 2.0。详见 [LICENSE.md](LICENSE.md)。
