@@ -1,0 +1,63 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: spm-
+
+      - name: Build archive
+        run: |
+          xcodebuild archive \
+            -scheme ClaudeIsland \
+            -configuration Release \
+            -archivePath build/ClaudeIsland.xcarchive \
+            -destination "generic/platform=macOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="-"
+
+      - name: Extract app from archive
+        run: |
+          mkdir -p build/export
+          cp -R "build/ClaudeIsland.xcarchive/Products/Applications/Claude Island.app" build/export/
+
+      - name: Get version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "Claude Island" \
+            -srcfolder "build/export/Claude Island.app" \
+            -ov -format UDZO \
+            "build/ClaudeIsland-${{ steps.version.outputs.tag }}.dmg"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "build/ClaudeIsland-${{ steps.version.outputs.tag }}.dmg" \
+            --title "Claude Island ${{ steps.version.outputs.tag }}" \
+            --generate-notes
