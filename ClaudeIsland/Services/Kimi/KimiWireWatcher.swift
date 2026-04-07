@@ -145,15 +145,83 @@ final class KimiWireWatcher {
             return
         }
 
-        let eventName = firstString(json["type"], json["event"], json["name"], json["kind"]) ?? "unknown"
+        let wireMessage = json["message"] as? [String: Any]
+        let payload = wireMessage?["payload"] as? [String: Any] ?? [:]
+        let eventName = firstString(
+            nested(json, "message", "type"),
+            json["type"],
+            json["event"],
+            json["name"],
+            json["kind"]
+        ) ?? "unknown"
+
+        if !sessionId.hasPrefix("kimi-print-"), eventName == "ToolCall" {
+            let toolCall = payload["function"] as? [String: Any] ?? [:]
+            let toolName = firstString(toolCall["name"], payload["name"])
+            let toolId = firstString(payload["id"], payload["tool_call_id"])
+            var toolInput: [String: AnyCodable]?
+            if let arguments = toolCall["arguments"] as? String, !arguments.isEmpty {
+                if let data = arguments.data(using: .utf8),
+                   let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    toolInput = anyCodableMap(parsed)
+                } else {
+                    toolInput = ["raw": AnyCodable(arguments)]
+                }
+            }
+
+            if let toolName, let toolId {
+                emit(event: HookEvent(
+                    sessionId: sessionId,
+                    source: .kimiCLI,
+                    cwd: cwd,
+                    event: "PreToolUse",
+                    status: "running_tool",
+                    pid: nil,
+                    tty: nil,
+                    approvalChannel: .none,
+                    tool: toolName,
+                    toolInput: toolInput,
+                    toolUseId: toolId,
+                    notificationType: "kimi_wire",
+                    message: nil
+                ))
+                return
+            }
+        }
+
+        if !sessionId.hasPrefix("kimi-print-"), eventName == "ToolResult" {
+            let returnValue = payload["return_value"] as? [String: Any] ?? [:]
+            let toolId = firstString(payload["tool_call_id"], payload["id"])
+            let isError = (returnValue["is_error"] as? Bool) == true
+            let output = firstString(returnValue["output"], returnValue["message"])
+            emit(event: HookEvent(
+                sessionId: sessionId,
+                source: .kimiCLI,
+                cwd: cwd,
+                event: isError ? "PostToolUseFailure" : "PostToolUse",
+                status: "processing",
+                pid: nil,
+                tty: nil,
+                approvalChannel: .none,
+                tool: nil,
+                toolInput: nil,
+                toolUseId: toolId,
+                notificationType: "kimi_wire",
+                message: output,
+                error: isError ? output : nil,
+                toolResponse: output
+            ))
+            return
+        }
 
         if eventName == "StatusUpdate" {
             let message = firstString(
+                payload["message"],
+                payload["status"],
+                payload["title"],
+                payload["body"],
                 json["message"],
-                json["status"],
-                json["title"],
-                json["body"],
-                nested(json, "payload", "message")
+                json["status"]
             ) ?? "Kimi status updated"
             emitDedupedNotification(kind: "status", message: "Kimi status: \(String(message.prefix(250)))")
             return
@@ -161,6 +229,9 @@ final class KimiWireWatcher {
 
         if eventName == "TurnEnd" {
             let errorMessage = firstString(
+                payload["error_message"],
+                payload["error"],
+                payload["reason"],
                 json["error_message"],
                 json["error"],
                 json["reason"],
@@ -180,6 +251,36 @@ final class KimiWireWatcher {
     }
 
     private func emitNotification(message: String) {
+        emit(event: HookEvent(
+            sessionId: sessionId,
+            source: .kimiCLI,
+            cwd: cwd,
+            event: "Notification",
+            status: "unknown",
+            pid: nil,
+            tty: nil,
+            approvalChannel: .none,
+            tool: nil,
+            toolInput: nil,
+            toolUseId: nil,
+            notificationType: "kimi_wire",
+            message: message
+        ))
+    }
+
+    private func emit(event: HookEvent) {
+        Task {
+            await SessionStore.shared.process(.hookReceived(event))
+        }
+    }
+
+    private func anyCodableMap(_ dict: [String: Any]) -> [String: AnyCodable] {
+        dict.reduce(into: [String: AnyCodable]()) { partialResult, entry in
+            partialResult[entry.key] = AnyCodable(entry.value)
+        }
+    }
+
+    private func emitNotificationLegacy(message: String) {
         let event = HookEvent(
             sessionId: sessionId,
             source: .kimiCLI,

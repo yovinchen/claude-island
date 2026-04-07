@@ -34,10 +34,10 @@
 | Codex CLI | 正式接入 | `hooks.json` + `config.toml` + `notify` | ✅ | ✅ | ⚠️ | `PreToolUse/PostToolUse` 当前主要覆盖 Bash |
 | Codex Desktop | 正式接入 | `session_index.jsonl` + transcript watcher | — | ✅ | — | 非 hook source，走 transcript 解析 |
 | Gemini CLI | 正式接入 | `settings.json` hooks | ✅ | ✅ | — | 生命周期覆盖完整，项目级 `.gemini/settings.json` 在存在时也纳入受管安装，未做独立审批模型 |
-| Copilot CLI | 部分支持 | `config.json` hooks | ✅ | ✅ | ⚠️ | 隐式审批和 `modifiedArgs` 原型已接入，项目级 `.github/hooks/*.json` 已做目录级诊断，且已有真实 hooks 样本、旧 VibeIsland 迁移清理、本地 events.jsonl 观察与 JSON helper 工具事件回放 |
+| Copilot CLI | 部分支持 | `config.json` hooks | ✅ | ✅ | ⚠️ | 隐式审批和 `modifiedArgs` 原型已接入，项目级 `.github/hooks/*.json` 已做目录级诊断，且已有真实 tool-using hooks 样本、旧 VibeIsland 迁移清理、本地 events.jsonl 观察与 JSON helper 工具事件回放 |
 | OpenCode | 正式接入 | JS plugin | ✅ | ✅ | — | plugin 路线稳定，先做只读增强 |
 | Droid | 正式接入 | Factory `settings.json` hooks | ✅ | ✅ | ✅ | Claude-compatible `hookSpecificOutput` |
-| Kimi CLI | 部分支持 | `config.toml` hooks | ✅ | ✅ | ⚠️ | 首版事件覆盖已接近官方 13 事件，事件字段提取已补强，并已拿到 print-mode tool-calling 样本与 wire.jsonl 补充观察面 |
+| Kimi CLI | 部分支持 | `config.toml` hooks | ✅ | ✅ | ⚠️ | 首版事件覆盖已接近官方 13 事件，事件字段提取已补强，并已拿到 print-mode tool-calling 样本与 wire.jsonl 的 ToolCall/ToolResult 补充观察面 |
 | Amp CLI | 部分支持 | global plugin + `amp-exec` + `amp-stream` | ✅ | ✅ | ⚠️ | 审批主要在 plugin 路线；stream-json 仍是 helper-first，项目级 `.amp/settings.json` / `.amp/plugins/` 已补诊断 |
 | Qoder CLI | 未接入 | — | — | — | — | 官方 CLI hooks 文档仍冲突，当前不拆 source |
 | Pi Coding Agent | 部分支持 | `pi` / `pi-json` helpers | ✅ | ✅ | — | `--mode json` 解析已覆盖单工具与多工具串行样本 |

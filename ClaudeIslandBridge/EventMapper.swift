@@ -208,7 +208,8 @@ enum EventMapper {
             nested(input, "session", "cwd"),
             nested(input, "turn_context", "cwd"),
             input["workingDirectory"],
-            input["workspace"]
+            input["workspace"],
+            input["workspacePath"]
         ) {
             return cwd
         }
@@ -606,6 +607,13 @@ enum EventMapper {
             if let parameters = nested(input, "preToolUse", "parameters") {
                 payload["tool_input"] = parameters
             }
+            if let toolUseId = firstString(
+                nested(input, "preToolUse", "toolUseId"),
+                nested(input, "preToolUse", "toolCallId"),
+                nested(input, "preToolUse", "id")
+            ) {
+                payload["tool_use_id"] = toolUseId
+            }
 
         case "posttooluse":
             if let tool = firstString(nested(input, "postToolUse", "tool")) {
@@ -631,6 +639,13 @@ enum EventMapper {
                     payload["message"] = "Duration: \(durationText)ms"
                 }
             }
+            if let toolUseId = firstString(
+                nested(input, "postToolUse", "toolUseId"),
+                nested(input, "postToolUse", "toolCallId"),
+                nested(input, "postToolUse", "id")
+            ) {
+                payload["tool_use_id"] = toolUseId
+            }
 
         case "precompact":
             if let trigger = firstString(nested(input, "preCompact", "trigger")) {
@@ -651,6 +666,8 @@ enum EventMapper {
 
         if let roots = input["workspaceRoots"] as? [String], let first = roots.first {
             payload["cwd"] = first
+        } else if let workspacePath = input["workspacePath"] as? String, !workspacePath.isEmpty {
+            payload["cwd"] = workspacePath
         }
     }
 
