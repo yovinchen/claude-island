@@ -48,6 +48,8 @@ enum EventMapper {
         // Source-specific: infer tool name/input/prompt from event-specific fields
         if source == "cursor" {
             applyCursorFields(input: input, eventName: eventName, payload: &payload)
+        } else if source == "copilot" {
+            applyCopilotFields(input: input, eventName: eventName, payload: &payload)
         } else if source == "cline" {
             applyClineFields(input: input, eventName: eventName, payload: &payload)
         } else if source == "windsurf" {
@@ -583,6 +585,32 @@ enum EventMapper {
         }
     }
 
+    private static func applyCopilotFields(input: [String: Any], eventName: String, payload: inout [String: Any]) {
+        let key = eventName.lowercased()
+
+        if key == "pretooluse",
+           let selected = selectCopilotToolCall(from: input) {
+            payload["tool"] = selected.name
+            payload["tool_input"] = selected.arguments
+            payload["tool_use_id"] = selected.id
+            if let toolCalls = input["toolCalls"] as? [[String: Any]], toolCalls.count > 1 {
+                payload["message"] = "Copilot proposed \(toolCalls.count) tool calls; focusing approval on \(selected.name)"
+            }
+        }
+
+        if key == "posttooluse" {
+            if let toolName = firstString(input["toolName"], nested(input, "toolResult", "toolName")) {
+                payload["tool"] = toolName
+            }
+            if let toolArgs = input["toolArgs"] as? [String: Any] {
+                payload["tool_input"] = toolArgs
+            }
+            if let toolUseId = firstString(input["toolCallId"], nested(input, "toolResult", "toolCallId")) {
+                payload["tool_use_id"] = toolUseId
+            }
+        }
+    }
+
     private static func applyClineFields(input: [String: Any], eventName: String, payload: inout [String: Any]) {
         let key = eventName.lowercased()
 
@@ -669,6 +697,47 @@ enum EventMapper {
         } else if let workspacePath = input["workspacePath"] as? String, !workspacePath.isEmpty {
             payload["cwd"] = workspacePath
         }
+    }
+
+    private static func selectCopilotToolCall(from input: [String: Any]) -> (id: String, name: String, arguments: [String: Any])? {
+        guard let toolCalls = input["toolCalls"] as? [[String: Any]], !toolCalls.isEmpty else {
+            return nil
+        }
+
+        let dangerousNames: Set<String> = ["bash", "write", "edit", "create", "run_in_terminal", "create_file", "search_replace"]
+
+        func parseArguments(_ raw: Any?) -> [String: Any]? {
+            if let dict = raw as? [String: Any] {
+                return dict
+            }
+            if let text = raw as? String, !text.isEmpty,
+               let data = text.data(using: .utf8),
+               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return dict
+            }
+            if let text = raw as? String, !text.isEmpty {
+                return ["raw": text]
+            }
+            return nil
+        }
+
+        let normalizedCalls: [(id: String, name: String, arguments: [String: Any])] = toolCalls.compactMap { call in
+            guard let id = firstString(call["id"], call["toolCallId"]),
+                  let name = firstString(call["name"], call["toolName"]) else {
+                return nil
+            }
+            return (id: id, name: name, arguments: parseArguments(call["args"] ?? call["arguments"]) ?? [:])
+        }
+
+        if let dangerous = normalizedCalls.first(where: { dangerousNames.contains($0.name.lowercased()) }) {
+            return dangerous
+        }
+
+        if let nonIntent = normalizedCalls.first(where: { $0.name.lowercased() != "report_intent" }) {
+            return nonIntent
+        }
+
+        return normalizedCalls.first
     }
 
     // MARK: - Helpers
