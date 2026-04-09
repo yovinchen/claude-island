@@ -39,7 +39,7 @@
 | Droid | 正式接入 | Factory `settings.json` hooks | ✅ | ✅ | ✅ | Claude-compatible `hookSpecificOutput` |
 | Kimi CLI | 部分支持 | `config.toml` hooks | ✅ | ✅ | ⚠️ | 首版事件覆盖已接近官方 13 事件，事件字段提取已补强，并已拿到 print-mode tool-calling 样本与 wire.jsonl 的 ToolCall/ToolResult 补充观察面 |
 | Amp CLI | 部分支持 | global plugin + `amp-exec` + `amp-stream` | ✅ | ✅ | ⚠️ | 审批主要在 plugin 路线；stream-json 仍是 helper-first，项目级 `.amp/settings.json` / `.amp/plugins/` 已补诊断 |
-| Qoder CLI | 部分支持 | wrapper (`qodercli -p -f stream-json`) | ✅ | ✅ | — | hooks 文档仍冲突，但当前已补 wrapper-first 监控入口，并清洗已知日志噪音 |
+| Qoder CLI | 部分支持 | wrapper (`qodercli -p -f stream-json`) | ✅ | ✅ | — | hooks 文档仍冲突，但当前已补 wrapper-first 监控入口、基础工具事件恢复与日志噪音清洗 |
 | Pi Coding Agent | 部分支持 | `pi` / `pi-json` helpers | ✅ | ✅ | — | `--mode json` 解析已覆盖单工具与多工具串行样本 |
 | Crush | 部分支持 | wrapper + project log watcher | ✅ | ✅ | — | 成功/失败样本已拿到，但仍无正式 tool-level log schema |
 
@@ -91,7 +91,7 @@
 | Droid | ✅ | ✅ | ✅ | ✅ | — | 正式 hooks source |
 | Kimi CLI | ✅ | ✅ | ✅ | — | ✅ | hooks 仍是主入口，`kimi-print` helper 已进入 auto-repair / watcher，并补充观察 `wire.jsonl` 的状态/失败信号 |
 | Amp CLI | ✅ | ✅ | ✅ | — | ✅ | plugin + `amp-exec` + `amp-stream`，helper 现已进入 auto-repair / watcher，workspace settings/plugins 已补诊断，解析型入口会压低 ANSI 噪音并在空 JSON 场景收敛成明确错误 |
-| Qoder CLI | ✅ | ✅ | ✅ | — | ⚠️ | wrapper-first 入口已接入；当前只做会话级/错误级监控，不做 hooks 审批，且会过滤常见日志噪音 |
+| Qoder CLI | ✅ | ✅ | ✅ | — | ✅ | wrapper-first 入口已接入；当前已能恢复基础工具事件并过滤常见日志噪音，但仍不做正式 hooks 审批 |
 | Pi Coding Agent | ✅ | ✅ | ✅ | — | ✅ | helper 脚本现已进入 auto-repair / watcher |
 | Crush | ✅ | ✅ | ✅ | — | ✅ | helper 脚本现已进入 auto-repair / watcher；日志仍是高层解析 |
 

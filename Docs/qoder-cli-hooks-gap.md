@@ -62,8 +62,9 @@ Qoder CLI **当前已进入部分支持**。虽然它还不应视为正式 hooks
 **最小实现方案**
 1. 继续保留现有 `qoder` source 代表 IDE / extension 路线。
 2. 当前已新增 `qoder_cli` wrapper-first 路线，先复用 `-p -f stream-json` 建立最小会话/错误监控。
-3. 当前 helper 还会过滤已知的 Qoder 日志轮转噪音，尽量只保留结构化 JSON 行和明确错误。
-4. 若后续证实 CLI hooks 配置入口稳定，再从当前 `qoder` 审批逻辑抽一层出来复用。
+3. 基于本机真实 `stream-json` 样本，当前 helper 已开始恢复基础 `PreToolUse / PostToolUse / Stop`，并优先使用 Qoder 自带的 `session_id` 而不是本地临时 ID。
+4. 当前 helper 还会过滤已知的 Qoder 日志轮转噪音，尽量只保留结构化 JSON 行和明确错误。
+5. 若后续证实 CLI hooks 配置入口稳定，再从当前 `qoder` 审批逻辑抽一层出来复用。
 
 **主要阻塞**
 - 当前阻塞点已经明确变成两件事：
