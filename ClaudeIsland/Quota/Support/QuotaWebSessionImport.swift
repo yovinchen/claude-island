@@ -79,6 +79,15 @@ final class QuotaWebSessionImportRunner: NSObject {
                 readyHosts: ["cursor.com", "www.cursor.com"],
                 readyPathHints: ["/dashboard"]
             )
+        case .claude:
+            return QuotaWebSessionImportConfiguration(
+                providerID: .claude,
+                windowTitle: "Claude Session Import",
+                initialURL: URL(string: "https://claude.ai/settings/usage")!,
+                allowedCookieDomains: ["claude.ai"],
+                readyHosts: ["claude.ai"],
+                readyPathHints: ["/settings", "usage"]
+            )
         case .opencode:
             return QuotaWebSessionImportConfiguration(
                 providerID: .opencode,

@@ -87,6 +87,24 @@ func quotaWindow(
     )
 }
 
+private func apiQuotaDebugProbe(
+    providerID: QuotaProviderID,
+    sourceLabel: String,
+    requestContext: String,
+    validation: String,
+    lastFailure: String? = nil
+) -> QuotaDebugProbeSnapshot {
+    QuotaDebugProbeSnapshot(
+        providerID: providerID,
+        attemptedSource: sourceLabel,
+        resolvedSource: sourceLabel,
+        provenanceLabel: sourceLabel,
+        requestContext: requestContext,
+        lastValidation: validation,
+        lastFailure: lastFailure
+    )
+}
+
 private struct OpenRouterCreditsResponse: Decodable {
     let data: OpenRouterCreditsData
 }
@@ -126,17 +144,21 @@ struct OpenRouterQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .openrouter)
 
     func isConfigured() -> Bool {
-        apiKey() != nil
+        apiKeyInfo() != nil
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        guard let apiKey = apiKey() else {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        guard let apiKey = apiKeyInfo() else {
             throw QuotaProviderError.missingCredentials("OpenRouter API token not configured.")
         }
 
-        let credits = try await fetchCredits(apiKey: apiKey)
+        let credits = try await fetchCredits(apiKey: apiKey.value)
         let balance = max(0, credits.totalCredits - credits.totalUsage)
-        let keyData = try? await fetchKeyData(apiKey: apiKey)
+        let keyData = try? await fetchKeyData(apiKey: apiKey.value)
 
         let primaryWindow = quotaWindow(
             label: descriptor.primaryLabel,
@@ -153,7 +175,7 @@ struct OpenRouterQuotaProvider: QuotaProvider {
             return "Rate limit: \(rateLimit.requests) requests / \(rateLimit.interval)"
         }()
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .openrouter,
             source: .apiKey,
             primaryWindow: primaryWindow,
@@ -176,10 +198,24 @@ struct OpenRouterQuotaProvider: QuotaProvider {
             updatedAt: Date(),
             note: note
         )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: apiKey.sourceLabel,
+            debugProbe: apiQuotaDebugProbe(
+                providerID: .openrouter,
+                sourceLabel: apiKey.sourceLabel,
+                requestContext: baseURL().absoluteString,
+                validation: "OpenRouter credits and key payloads accepted."
+            )
+        )
     }
 
     private func apiKey() -> String? {
-        SavedProviderTokenResolver.token(for: .openrouter, envKeys: ["OPENROUTER_API_KEY"])
+        apiKeyInfo()?.value
+    }
+
+    private func apiKeyInfo() -> ResolvedProviderCredential? {
+        SavedProviderTokenResolver.tokenInfo(for: .openrouter, envKeys: ["OPENROUTER_API_KEY"])
     }
 
     private func baseURL() -> URL {
@@ -221,11 +257,15 @@ struct WarpQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .warp)
 
     func isConfigured() -> Bool {
-        apiKey() != nil
+        apiKeyInfo() != nil
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        guard let apiKey = apiKey() else {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        guard let apiKey = apiKeyInfo() else {
             throw QuotaProviderError.missingCredentials("Warp API key not configured.")
         }
 
@@ -238,7 +278,7 @@ struct WarpQuotaProvider: QuotaProvider {
         request.setValue("Warp/1.0", forHTTPHeaderField: "User-Agent")
         request.setValue("macOS", forHTTPHeaderField: "x-warp-os-category")
         request.setValue("macOS", forHTTPHeaderField: "x-warp-os-name")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(apiKey.value)", forHTTPHeaderField: "Authorization")
 
         let osVersion = Foundation.ProcessInfo.processInfo.operatingSystemVersion
         let osVersionString = "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
@@ -320,7 +360,7 @@ struct WarpQuotaProvider: QuotaProvider {
             resetsAt: nextExpiringGrant?.0
         )
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .warp,
             source: .apiKey,
             primaryWindow: primaryWindow,
@@ -335,6 +375,16 @@ struct WarpQuotaProvider: QuotaProvider {
             ),
             updatedAt: Date(),
             note: nil
+        )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: apiKey.sourceLabel,
+            debugProbe: apiQuotaDebugProbe(
+                providerID: .warp,
+                sourceLabel: apiKey.sourceLabel,
+                requestContext: "https://app.warp.dev/graphql/v2?op=GetRequestLimitInfo",
+                validation: "Warp GraphQL requestLimitInfo accepted."
+            )
         )
     }
 
@@ -371,7 +421,11 @@ struct WarpQuotaProvider: QuotaProvider {
     """
 
     private func apiKey() -> String? {
-        SavedProviderTokenResolver.token(for: .warp, envKeys: ["WARP_API_KEY", "WARP_TOKEN"])
+        apiKeyInfo()?.value
+    }
+
+    private func apiKeyInfo() -> ResolvedProviderCredential? {
+        SavedProviderTokenResolver.tokenInfo(for: .warp, envKeys: ["WARP_API_KEY", "WARP_TOKEN"])
     }
 
     private static func requestLimitInfo(from root: [String: Any]) -> [String: Any]? {
@@ -397,18 +451,22 @@ struct KimiK2QuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .kimiK2)
 
     func isConfigured() -> Bool {
-        apiKey() != nil
+        apiKeyInfo() != nil
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        guard let apiKey = apiKey() else {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        guard let apiKey = apiKeyInfo() else {
             throw QuotaProviderError.missingCredentials("Kimi K2 API key not configured.")
         }
 
         var request = URLRequest(url: URL(string: "https://kimi-k2.ai/api/user/credits")!)
         request.httpMethod = "GET"
         request.timeoutInterval = 15
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(apiKey.value)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await QuotaRuntimeSupport.data(for: request)
@@ -435,7 +493,7 @@ struct KimiK2QuotaProvider: QuotaProvider {
             isUnlimited: false
         )
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .kimiK2,
             source: .apiKey,
             primaryWindow: quotaWindow(
@@ -455,6 +513,16 @@ struct KimiK2QuotaProvider: QuotaProvider {
             ),
             updatedAt: updatedAt,
             note: averageTokens.map { "Average tokens/request: \(Int($0))" }
+        )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: apiKey.sourceLabel,
+            debugProbe: apiQuotaDebugProbe(
+                providerID: .kimiK2,
+                sourceLabel: apiKey.sourceLabel,
+                requestContext: "https://kimi-k2.ai/api/user/credits",
+                validation: "Kimi K2 credits payload accepted."
+            )
         )
     }
 
@@ -504,7 +572,11 @@ struct KimiK2QuotaProvider: QuotaProvider {
     ]
 
     private func apiKey() -> String? {
-        SavedProviderTokenResolver.token(for: .kimiK2, envKeys: ["KIMI_K2_API_KEY", "KIMI_API_KEY", "KIMI_KEY"])
+        apiKeyInfo()?.value
+    }
+
+    private func apiKeyInfo() -> ResolvedProviderCredential? {
+        SavedProviderTokenResolver.tokenInfo(for: .kimiK2, envKeys: ["KIMI_K2_API_KEY", "KIMI_API_KEY", "KIMI_KEY"])
     }
 
     private static func contexts(from root: [String: Any]) -> [[String: Any]] {
@@ -557,18 +629,22 @@ struct ZAIQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .zai)
 
     func isConfigured() -> Bool {
-        apiKey() != nil
+        apiKeyInfo() != nil
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        guard let apiKey = apiKey() else {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        guard let apiKey = apiKeyInfo() else {
             throw QuotaProviderError.missingCredentials("z.ai API key not configured.")
         }
 
         var request = URLRequest(url: endpointURL())
         request.httpMethod = "GET"
         request.timeoutInterval = 15
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(apiKey.value)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await QuotaRuntimeSupport.data(for: request)
@@ -611,7 +687,7 @@ struct ZAIQuotaProvider: QuotaProvider {
         let plan = Self.planName(from: dataObject)
         let note = Self.usageDetailNote(from: tokenLimit ?? timeLimit)
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .zai,
             source: .apiKey,
             primaryWindow: primaryWindow,
@@ -627,10 +703,24 @@ struct ZAIQuotaProvider: QuotaProvider {
             updatedAt: Date(),
             note: note
         )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: apiKey.sourceLabel,
+            debugProbe: apiQuotaDebugProbe(
+                providerID: .zai,
+                sourceLabel: apiKey.sourceLabel,
+                requestContext: endpointURL().absoluteString,
+                validation: "z.ai quota payload accepted."
+            )
+        )
     }
 
     private func apiKey() -> String? {
-        SavedProviderTokenResolver.token(for: .zai, envKeys: ["Z_AI_API_KEY"])
+        apiKeyInfo()?.value
+    }
+
+    private func apiKeyInfo() -> ResolvedProviderCredential? {
+        SavedProviderTokenResolver.tokenInfo(for: .zai, envKeys: ["Z_AI_API_KEY"])
     }
 
     private func endpointURL() -> URL {

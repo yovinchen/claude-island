@@ -1020,6 +1020,10 @@ struct JetBrainsQuotaProvider: QuotaProvider {
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
         guard let ide = JetBrainsIDEDetector.detectLatestIDE() else {
             throw QuotaProviderError.missingCredentials("No JetBrains IDE quota file was detected.")
         }
@@ -1032,7 +1036,7 @@ struct JetBrainsQuotaProvider: QuotaProvider {
             resetsAt: refillInfo?.next
         )
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .jetbrains,
             source: .local,
             primaryWindow: primaryWindow,
@@ -1047,6 +1051,19 @@ struct JetBrainsQuotaProvider: QuotaProvider {
             ),
             updatedAt: Date(),
             note: refillInfo?.next.map { "Refill \(QuotaRuntimeSupport.relativeResetDescription(for: $0))" }
+        )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: "local",
+            debugProbe: QuotaDebugProbeSnapshot(
+                providerID: .jetbrains,
+                attemptedSource: "local",
+                resolvedSource: "local",
+                provenanceLabel: ide.displayName,
+                requestContext: ide.quotaFilePath,
+                lastValidation: "JetBrains quotaInfo and refill info accepted.",
+                lastFailure: nil
+            )
         )
     }
 }

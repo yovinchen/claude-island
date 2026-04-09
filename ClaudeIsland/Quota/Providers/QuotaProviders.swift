@@ -37,18 +37,20 @@ enum QuotaProviderRegistry {
         QuotaProviderDescriptor(
             id: .claude,
             sourceKind: .oauth,
-            supportedSources: [.oauth, .cli],
+            supportedSources: [.oauth, .cli, .web],
             cliBinaryName: "claude",
             primaryLabel: "Session",
             secondaryLabel: "Weekly",
-            credentialHint: "Reads Claude OAuth credentials from Keychain or ~/.claude/.credentials.json, with CLI /usage as a fallback.",
-            credentialPlaceholder: nil,
-            supportsManualSecret: false,
+            credentialHint: "Reads Claude OAuth credentials from Keychain or ~/.claude/.credentials.json, with claude.ai session cookies as an optional web fallback.",
+            credentialPlaceholder: "sessionKey=sk-ant-…",
+            supportsManualSecret: true,
             defaultEnabled: true,
             refreshInterval: 300,
             dashboardURL: "https://claude.ai/settings/usage",
             statusURL: "https://status.claude.com/",
-            sortPriority: 1
+            sortPriority: 1,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .gemini,

@@ -5,6 +5,24 @@
 
 import Foundation
 
+private func wave3DebugProbe(
+    providerID: QuotaProviderID,
+    sourceLabel: String,
+    requestContext: String,
+    validation: String,
+    lastFailure: String? = nil
+) -> QuotaDebugProbeSnapshot {
+    QuotaDebugProbeSnapshot(
+        providerID: providerID,
+        attemptedSource: sourceLabel,
+        resolvedSource: sourceLabel,
+        provenanceLabel: sourceLabel,
+        requestContext: requestContext,
+        lastValidation: validation,
+        lastFailure: lastFailure
+    )
+}
+
 // MARK: - Antigravity
 
 struct AntigravityModelQuota: Sendable {
@@ -612,8 +630,22 @@ struct AntigravityQuotaProvider: QuotaProvider {
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
         let snapshot = try await AntigravityStatusProbe().fetch()
-        return try snapshot.toQuotaSnapshot()
+        let quotaSnapshot = try snapshot.toQuotaSnapshot()
+        return QuotaProviderFetchOutcome(
+            snapshot: quotaSnapshot,
+            sourceLabel: "local",
+            debugProbe: wave3DebugProbe(
+                providerID: .antigravity,
+                sourceLabel: "local",
+                requestContext: "Antigravity language server local probe",
+                validation: "Antigravity user-status payload accepted."
+            )
+        )
     }
 }
 
@@ -1076,6 +1108,10 @@ struct VertexAIQuotaProvider: QuotaProvider {
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
         var credentials = try VertexAIOAuthCredentialsStore.load()
         if credentials.needsRefresh {
             credentials = try await VertexAITokenRefresher.refresh(credentials)
@@ -1111,7 +1147,7 @@ struct VertexAIQuotaProvider: QuotaProvider {
             }
         }
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .vertexAI,
             source: .oauth,
             primaryWindow: primaryWindow,
@@ -1126,6 +1162,18 @@ struct VertexAIQuotaProvider: QuotaProvider {
             ),
             updatedAt: Date(),
             note: nil
+        )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: "oauth",
+            debugProbe: wave3DebugProbe(
+                providerID: .vertexAI,
+                sourceLabel: "oauth",
+                requestContext: credentials.projectId.map { "Vertex AI Monitoring project \($0)" } ?? "Vertex AI ADC credentials",
+                validation: usage == nil
+                    ? "Vertex AI credentials accepted; no recent usage data."
+                    : "Vertex AI monitoring payload accepted."
+            )
         )
     }
 }
@@ -1789,30 +1837,105 @@ struct KiloQuotaProvider: QuotaProvider {
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
         switch QuotaPreferences.sourcePreference(for: .kilo) {
         case .apiKey:
             guard let token = apiToken() else { throw KiloUsageError.missingCredentials }
-            return try await KiloUsageFetcher.fetchUsage(apiKey: token).toQuotaSnapshot(source: .apiKey)
+            let usage = try await KiloUsageFetcher.fetchUsage(apiKey: token)
+            return .init(
+                snapshot: usage.toQuotaSnapshot(source: .apiKey),
+                sourceLabel: "api",
+                debugProbe: wave3DebugProbe(
+                    providerID: .kilo,
+                    sourceLabel: "api",
+                    requestContext: KiloSettingsReader.apiURL().absoluteString,
+                    validation: "Kilo API quota payload accepted."
+                )
+            )
         case .cli:
             let token = try cliAuthTokenRequired()
-            return try await KiloUsageFetcher.fetchUsage(apiKey: token).toQuotaSnapshot(source: .cli)
+            let usage = try await KiloUsageFetcher.fetchUsage(apiKey: token)
+            return .init(
+                snapshot: usage.toQuotaSnapshot(source: .cli),
+                sourceLabel: "cli",
+                debugProbe: wave3DebugProbe(
+                    providerID: .kilo,
+                    sourceLabel: "cli",
+                    requestContext: KiloSettingsReader.defaultAuthFileURL(homeDirectory: FileManager.default.homeDirectoryForCurrentUser).path,
+                    validation: "Kilo CLI session token accepted."
+                )
+            )
         case .auto:
             if let token = apiToken() {
                 do {
-                    return try await KiloUsageFetcher.fetchUsage(apiKey: token).toQuotaSnapshot(source: .apiKey)
+                    let usage = try await KiloUsageFetcher.fetchUsage(apiKey: token)
+                    return .init(
+                        snapshot: usage.toQuotaSnapshot(source: .apiKey),
+                        sourceLabel: "api",
+                        debugProbe: wave3DebugProbe(
+                            providerID: .kilo,
+                            sourceLabel: "api",
+                            requestContext: KiloSettingsReader.apiURL().absoluteString,
+                            validation: "Kilo API quota payload accepted."
+                        )
+                    )
                 } catch let error as KiloUsageError where error == .missingCredentials || error == .unauthorized {
                     let cliToken = try cliAuthTokenRequired()
-                    return try await KiloUsageFetcher.fetchUsage(apiKey: cliToken).toQuotaSnapshot(source: .cli)
+                    let usage = try await KiloUsageFetcher.fetchUsage(apiKey: cliToken)
+                    return .init(
+                        snapshot: usage.toQuotaSnapshot(source: .cli),
+                        sourceLabel: "cli",
+                        debugProbe: wave3DebugProbe(
+                            providerID: .kilo,
+                            sourceLabel: "cli",
+                            requestContext: KiloSettingsReader.defaultAuthFileURL(homeDirectory: FileManager.default.homeDirectoryForCurrentUser).path,
+                            validation: "Kilo CLI fallback token accepted.",
+                            lastFailure: error.localizedDescription
+                        )
+                    )
                 }
             }
             let cliToken = try cliAuthTokenRequired()
-            return try await KiloUsageFetcher.fetchUsage(apiKey: cliToken).toQuotaSnapshot(source: .cli)
+            let usage = try await KiloUsageFetcher.fetchUsage(apiKey: cliToken)
+            return .init(
+                snapshot: usage.toQuotaSnapshot(source: .cli),
+                sourceLabel: "cli",
+                debugProbe: wave3DebugProbe(
+                    providerID: .kilo,
+                    sourceLabel: "cli",
+                    requestContext: KiloSettingsReader.defaultAuthFileURL(homeDirectory: FileManager.default.homeDirectoryForCurrentUser).path,
+                    validation: "Kilo CLI token accepted."
+                )
+            )
         default:
             if let token = apiToken() {
-                return try await KiloUsageFetcher.fetchUsage(apiKey: token).toQuotaSnapshot(source: .apiKey)
+                let usage = try await KiloUsageFetcher.fetchUsage(apiKey: token)
+                return .init(
+                    snapshot: usage.toQuotaSnapshot(source: .apiKey),
+                    sourceLabel: "api",
+                    debugProbe: wave3DebugProbe(
+                        providerID: .kilo,
+                        sourceLabel: "api",
+                        requestContext: KiloSettingsReader.apiURL().absoluteString,
+                        validation: "Kilo API quota payload accepted."
+                    )
+                )
             }
             let cliToken = try cliAuthTokenRequired()
-            return try await KiloUsageFetcher.fetchUsage(apiKey: cliToken).toQuotaSnapshot(source: .cli)
+            let usage = try await KiloUsageFetcher.fetchUsage(apiKey: cliToken)
+            return .init(
+                snapshot: usage.toQuotaSnapshot(source: .cli),
+                sourceLabel: "cli",
+                debugProbe: wave3DebugProbe(
+                    providerID: .kilo,
+                    sourceLabel: "cli",
+                    requestContext: KiloSettingsReader.defaultAuthFileURL(homeDirectory: FileManager.default.homeDirectoryForCurrentUser).path,
+                    validation: "Kilo CLI token accepted."
+                )
+            )
         }
     }
 

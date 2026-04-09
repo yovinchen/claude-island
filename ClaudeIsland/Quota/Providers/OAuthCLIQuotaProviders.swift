@@ -4,6 +4,27 @@
 //
 
 import Foundation
+#if canImport(SweetCookieKit)
+import SweetCookieKit
+#endif
+
+private func oauthCliDebugProbe(
+    providerID: QuotaProviderID,
+    sourceLabel: String,
+    requestContext: String,
+    validation: String,
+    lastFailure: String? = nil
+) -> QuotaDebugProbeSnapshot {
+    QuotaDebugProbeSnapshot(
+        providerID: providerID,
+        attemptedSource: sourceLabel,
+        resolvedSource: sourceLabel,
+        provenanceLabel: sourceLabel,
+        requestContext: requestContext,
+        lastValidation: validation,
+        lastFailure: lastFailure
+    )
+}
 import Security
 
 // MARK: - Codex
@@ -574,30 +595,38 @@ struct CodexQuotaProvider: QuotaProvider {
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
         switch QuotaPreferences.sourcePreference(for: .codex) {
         case .cli:
-            return try await fetchViaRPC()
+            return try await fetchViaRPCOutcome()
         case .oauth:
             let credentials = try CodexQuotaCredentialsStore.load()
-            return try await fetchViaOAuth(credentials)
+            return try await fetchViaOAuthOutcome(credentials)
         default:
             break
         }
 
         if let credentials = try? CodexQuotaCredentialsStore.load() {
             do {
-                return try await fetchViaOAuth(credentials)
+                return try await fetchViaOAuthOutcome(credentials)
             } catch {
                 if cliBinaryPath() != nil {
-                    return try await fetchViaRPC()
+                    return try await fetchViaRPCOutcome(lastFailure: error.localizedDescription)
                 }
                 throw error
             }
         }
-        return try await fetchViaRPC()
+        return try await fetchViaRPCOutcome()
     }
 
     private func fetchViaOAuth(_ credentials: CodexQuotaCredentials) async throws -> QuotaSnapshot {
+        try await fetchViaOAuthOutcome(credentials).snapshot
+    }
+
+    private func fetchViaOAuthOutcome(_ credentials: CodexQuotaCredentials) async throws -> QuotaProviderFetchOutcome {
         let activeCredentials = if credentials.needsRefresh {
             try await CodexQuotaCredentialsStore.refresh(credentials)
         } else {
@@ -629,7 +658,7 @@ struct CodexQuotaProvider: QuotaProvider {
             detail: nil
         )
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .codex,
             source: .oauth,
             primaryWindow: primaryWindow,
@@ -649,9 +678,23 @@ struct CodexQuotaProvider: QuotaProvider {
             updatedAt: Date(),
             note: nil
         )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: "oauth",
+            debugProbe: oauthCliDebugProbe(
+                providerID: .codex,
+                sourceLabel: "oauth",
+                requestContext: "https://api.openai.com/codex/usage",
+                validation: "Codex OAuth usage payload accepted."
+            )
+        )
     }
 
     private func fetchViaRPC() async throws -> QuotaSnapshot {
+        try await fetchViaRPCOutcome().snapshot
+    }
+
+    private func fetchViaRPCOutcome(lastFailure: String? = nil) async throws -> QuotaProviderFetchOutcome {
         guard let binaryPath = cliBinaryPath() else {
             throw QuotaProviderError.commandFailed("codex not found.")
         }
@@ -694,7 +737,7 @@ struct CodexQuotaProvider: QuotaProvider {
             }
         }()
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .codex,
             source: .cli,
             primaryWindow: primaryWindow,
@@ -713,6 +756,17 @@ struct CodexQuotaProvider: QuotaProvider {
             identity: identity,
             updatedAt: Date(),
             note: "Source: Codex app-server"
+        )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: "codex-cli",
+            debugProbe: oauthCliDebugProbe(
+                providerID: .codex,
+                sourceLabel: "codex-cli",
+                requestContext: binaryPath,
+                validation: "Codex app-server rateLimits accepted.",
+                lastFailure: lastFailure
+            )
         )
     }
 
@@ -934,37 +988,349 @@ private enum ClaudeQuotaUsageFetcher {
     }
 }
 
+#if os(macOS) && canImport(SweetCookieKit)
+private enum ClaudeBrowserCookieImporter {
+    private static let cookieDomains = ["claude.ai"]
+    private static let requiredCookieNames: Set<String> = ["sessionKey"]
+
+    static func hasSession() -> Bool {
+        !candidateSessions().isEmpty
+    }
+
+    static func candidateSessions() -> [QuotaBrowserCookieSession] {
+        QuotaBrowserCookieImporter.candidateSessions(
+            domains: cookieDomains,
+            browserOrder: Browser.defaultImportOrder,
+            requiredCookieNames: requiredCookieNames,
+            allowDomainFallback: false
+        )
+    }
+}
+#endif
+
+private struct ClaudeWebOrganizationInfo: Sendable {
+    let id: String
+    let name: String?
+}
+
+private struct ClaudeWebUsageData: Sendable {
+    let sessionPercentUsed: Double
+    let sessionResetsAt: Date?
+    let weeklyPercentUsed: Double?
+    let weeklyResetsAt: Date?
+    let opusPercentUsed: Double?
+    let extraUsageCost: QuotaCredits?
+    let accountOrganization: String?
+    let accountEmail: String?
+    let loginMethod: String?
+}
+
+private enum ClaudeWebQuotaFetcher {
+    private static let baseURL = "https://claude.ai/api"
+
+    private struct AccountResponse: Decodable {
+        let emailAddress: String?
+        let memberships: [Membership]?
+
+        enum CodingKeys: String, CodingKey {
+            case emailAddress = "email_address"
+            case memberships
+        }
+
+        struct Membership: Decodable {
+            let organization: Organization
+
+            struct Organization: Decodable {
+                let uuid: String?
+                let rateLimitTier: String?
+                let billingType: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case uuid
+                    case rateLimitTier = "rate_limit_tier"
+                    case billingType = "billing_type"
+                }
+            }
+        }
+    }
+
+    private struct OverageSpendLimitResponse: Decodable {
+        let monthlyCreditLimit: Double?
+        let currency: String?
+        let usedCredits: Double?
+        let isEnabled: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case monthlyCreditLimit = "monthly_credit_limit"
+            case currency
+            case usedCredits = "used_credits"
+            case isEnabled = "is_enabled"
+        }
+    }
+
+    private struct OrganizationResponse: Decodable {
+        let uuid: String
+        let name: String?
+        let capabilities: [String]?
+
+        var normalizedCapabilities: Set<String> {
+            Set((capabilities ?? []).map { $0.lowercased() })
+        }
+
+        var hasChatCapability: Bool { normalizedCapabilities.contains("chat") }
+        var isAPIOnly: Bool { !normalizedCapabilities.isEmpty && normalizedCapabilities == ["api"] }
+    }
+
+    static func fetchUsage(cookieHeader: String) async throws -> ClaudeWebUsageData {
+        let sessionKey = try sessionKey(from: cookieHeader)
+        let organization = try await fetchOrganizationInfo(sessionKey: sessionKey)
+        var usage = try await fetchUsageData(sessionKey: sessionKey, organization: organization)
+        if usage.extraUsageCost == nil,
+           let extraUsage = await fetchExtraUsageCost(sessionKey: sessionKey, organizationID: organization.id)
+        {
+            usage = ClaudeWebUsageData(
+                sessionPercentUsed: usage.sessionPercentUsed,
+                sessionResetsAt: usage.sessionResetsAt,
+                weeklyPercentUsed: usage.weeklyPercentUsed,
+                weeklyResetsAt: usage.weeklyResetsAt,
+                opusPercentUsed: usage.opusPercentUsed,
+                extraUsageCost: extraUsage,
+                accountOrganization: usage.accountOrganization,
+                accountEmail: usage.accountEmail,
+                loginMethod: usage.loginMethod
+            )
+        }
+        if let account = await fetchAccountInfo(sessionKey: sessionKey, organizationID: organization.id) {
+            usage = ClaudeWebUsageData(
+                sessionPercentUsed: usage.sessionPercentUsed,
+                sessionResetsAt: usage.sessionResetsAt,
+                weeklyPercentUsed: usage.weeklyPercentUsed,
+                weeklyResetsAt: usage.weeklyResetsAt,
+                opusPercentUsed: usage.opusPercentUsed,
+                extraUsageCost: usage.extraUsageCost,
+                accountOrganization: usage.accountOrganization ?? organization.name,
+                accountEmail: account.email,
+                loginMethod: account.loginMethod
+            )
+        }
+        return usage
+    }
+
+    static func hasSessionKey(cookieHeader: String?) -> Bool {
+        guard let cookieHeader else { return false }
+        return (try? sessionKey(from: cookieHeader)) != nil
+    }
+
+    static func sessionKey(from cookieHeader: String) throws -> String {
+        let pairs = CookieHeaderNormalizer.pairs(from: cookieHeader)
+        if let rawToken = QuotaRuntimeSupport.cleaned(cookieHeader),
+           !rawToken.contains("="),
+           rawToken.hasPrefix("sk-ant-")
+        {
+            return rawToken
+        }
+        guard let sessionKey = pairs.first(where: { $0.name == "sessionKey" })?.value,
+              sessionKey.hasPrefix("sk-ant-")
+        else {
+            throw QuotaProviderError.missingCredentials("Claude web session key not found.")
+        }
+        return sessionKey
+    }
+
+    private static func fetchOrganizationInfo(sessionKey: String) async throws -> ClaudeWebOrganizationInfo {
+        var request = URLRequest(url: URL(string: "\(baseURL)/organizations")!)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await QuotaRuntimeSupport.data(for: request)
+        switch response.statusCode {
+        case 200:
+            let organizations = try JSONDecoder().decode([OrganizationResponse].self, from: data)
+            guard let selected = organizations.first(where: { $0.hasChatCapability })
+                ?? organizations.first(where: { !$0.isAPIOnly })
+                ?? organizations.first
+            else {
+                throw QuotaProviderError.invalidResponse("Claude web account has no organizations.")
+            }
+            return ClaudeWebOrganizationInfo(id: selected.uuid, name: QuotaRuntimeSupport.cleaned(selected.name))
+        case 401, 403:
+            throw QuotaProviderError.unauthorized("Claude web session expired or unauthorized.")
+        default:
+            throw QuotaProviderError.invalidResponse("Claude organizations API returned HTTP \(response.statusCode)")
+        }
+    }
+
+    private static func fetchUsageData(sessionKey: String, organization: ClaudeWebOrganizationInfo) async throws -> ClaudeWebUsageData {
+        var request = URLRequest(url: URL(string: "\(baseURL)/organizations/\(organization.id)/usage")!)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await QuotaRuntimeSupport.data(for: request)
+        switch response.statusCode {
+        case 200:
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw QuotaProviderError.invalidResponse("Claude web usage payload is invalid.")
+            }
+            guard let fiveHour = json["five_hour"] as? [String: Any],
+                  let utilization = QuotaRuntimeSupport.doubleValue(fiveHour["utilization"])
+            else {
+                throw QuotaProviderError.invalidResponse("Claude web usage payload is missing five_hour utilization.")
+            }
+            let sessionResets = QuotaUtilities.isoDate(QuotaRuntimeSupport.stringValue(fiveHour["resets_at"]))
+            let weekly = json["seven_day"] as? [String: Any]
+            let opus = (json["seven_day_opus"] as? [String: Any]) ?? (json["seven_day_sonnet"] as? [String: Any])
+            return ClaudeWebUsageData(
+                sessionPercentUsed: utilization,
+                sessionResetsAt: sessionResets,
+                weeklyPercentUsed: weekly.flatMap { QuotaRuntimeSupport.doubleValue($0["utilization"]) },
+                weeklyResetsAt: weekly.flatMap { QuotaUtilities.isoDate(QuotaRuntimeSupport.stringValue($0["resets_at"])) },
+                opusPercentUsed: opus.flatMap { QuotaRuntimeSupport.doubleValue($0["utilization"]) },
+                extraUsageCost: nil,
+                accountOrganization: organization.name,
+                accountEmail: nil,
+                loginMethod: nil
+            )
+        case 401, 403:
+            throw QuotaProviderError.unauthorized("Claude web session expired or unauthorized.")
+        default:
+            throw QuotaProviderError.invalidResponse("Claude usage API returned HTTP \(response.statusCode)")
+        }
+    }
+
+    private static func fetchExtraUsageCost(sessionKey: String, organizationID: String) async -> QuotaCredits? {
+        var request = URLRequest(url: URL(string: "\(baseURL)/organizations/\(organizationID)/overage_spend_limit")!)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        guard let (data, response) = try? await QuotaRuntimeSupport.data(for: request),
+              response.statusCode == 200,
+              let decoded = try? JSONDecoder().decode(OverageSpendLimitResponse.self, from: data),
+              decoded.isEnabled == true,
+              let used = decoded.usedCredits,
+              let limit = decoded.monthlyCreditLimit,
+              let currency = decoded.currency
+        else {
+            return nil
+        }
+        let usedAmount = used / 100.0
+        let totalAmount = limit / 100.0
+        return QuotaCredits(
+            label: "Extra usage",
+            used: usedAmount,
+            total: totalAmount,
+            remaining: max(0, totalAmount - usedAmount),
+            currencyCode: currency,
+            isUnlimited: false
+        )
+    }
+
+    private struct ClaudeWebAccountInfo {
+        let email: String?
+        let loginMethod: String?
+    }
+
+    private static func fetchAccountInfo(sessionKey: String, organizationID: String) async -> ClaudeWebAccountInfo? {
+        var request = URLRequest(url: URL(string: "\(baseURL)/account")!)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        guard let (data, response) = try? await QuotaRuntimeSupport.data(for: request),
+              response.statusCode == 200,
+              let decoded = try? JSONDecoder().decode(AccountResponse.self, from: data)
+        else {
+            return nil
+        }
+        let email = QuotaRuntimeSupport.cleaned(decoded.emailAddress)
+        let membership = decoded.memberships?.first(where: { $0.organization.uuid == organizationID }) ?? decoded.memberships?.first
+        let loginMethod = cleanedPlanName(
+            rateLimitTier: membership?.organization.rateLimitTier,
+            billingType: membership?.organization.billingType
+        )
+        return ClaudeWebAccountInfo(email: email, loginMethod: loginMethod)
+    }
+
+    private static func cleanedPlanName(rateLimitTier: String?, billingType: String?) -> String? {
+        let pieces = [rateLimitTier, billingType]
+            .compactMap { QuotaRuntimeSupport.cleaned($0) }
+        guard !pieces.isEmpty else { return nil }
+        return pieces
+            .joined(separator: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+}
+
 struct ClaudeQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .claude)
 
     func isConfigured() -> Bool {
-        ClaudeQuotaCredentialsStore.hasCredentials() || cliBinaryPath() != nil
+        ClaudeQuotaCredentialsStore.hasCredentials() || cliBinaryPath() != nil || !cookieCandidates().isEmpty
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
         switch QuotaPreferences.sourcePreference(for: .claude) {
         case .cli:
-            return try await fetchViaCLI()
+            return try await fetchViaCLIOutcome()
         case .oauth:
-            return try await fetchViaOAuth()
+            return try await fetchViaOAuthOutcome()
+        case .web:
+            return try await fetchViaWebOutcome()
         default:
             break
         }
 
         if ClaudeQuotaCredentialsStore.hasCredentials() {
             do {
-                return try await fetchViaOAuth()
+                return try await fetchViaOAuthOutcome()
             } catch {
+                if !cookieCandidates().isEmpty {
+                    do {
+                        return try await fetchViaWebOutcome(lastFailure: error.localizedDescription)
+                    } catch {
+                        if cliBinaryPath() != nil {
+                            return try await fetchViaCLIOutcome(lastFailure: error.localizedDescription)
+                        }
+                        throw error
+                    }
+                }
                 if cliBinaryPath() != nil {
-                    return try await fetchViaCLI()
+                    return try await fetchViaCLIOutcome(lastFailure: error.localizedDescription)
                 }
                 throw error
             }
         }
-        return try await fetchViaCLI()
+        if !cookieCandidates().isEmpty {
+            do {
+                return try await fetchViaWebOutcome()
+            } catch {
+                if cliBinaryPath() != nil {
+                    return try await fetchViaCLIOutcome(lastFailure: error.localizedDescription)
+                }
+                throw error
+            }
+        }
+        return try await fetchViaCLIOutcome()
     }
 
     private func fetchViaOAuth() async throws -> QuotaSnapshot {
+        try await fetchViaOAuthOutcome().snapshot
+    }
+
+    private func fetchViaOAuthOutcome() async throws -> QuotaProviderFetchOutcome {
         let credentials = try ClaudeQuotaCredentialsStore.load()
         let activeCredentials = if credentials.isExpired {
             try await ClaudeQuotaCredentialsStore.refresh(credentials)
@@ -995,7 +1361,7 @@ struct ClaudeQuotaProvider: QuotaProvider {
             noteParts.append(String(format: "Extra usage $%.2f / $%.2f", used, limit))
         }
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .claude,
             source: .oauth,
             primaryWindow: primaryWindow,
@@ -1011,14 +1377,109 @@ struct ClaudeQuotaProvider: QuotaProvider {
             updatedAt: Date(),
             note: noteParts.isEmpty ? nil : noteParts.joined(separator: " • ")
         )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: "oauth",
+            debugProbe: oauthCliDebugProbe(
+                providerID: .claude,
+                sourceLabel: "oauth",
+                requestContext: "https://api.anthropic.com/api/oauth/usage",
+                validation: "Claude OAuth usage payload accepted."
+            )
+        )
+    }
+
+    private func fetchViaWebOutcome(lastFailure: String? = nil) async throws -> QuotaProviderFetchOutcome {
+        let candidates = cookieCandidates()
+        let requestContext = "https://claude.ai/api/organizations/{org}/usage"
+        guard !candidates.isEmpty else {
+            throw QuotaProviderError.missingCredentials("Claude web session not found. Sign in on claude.ai, use Import Session, or paste a sessionKey Cookie header.")
+        }
+
+        var lastError: Error?
+        for candidate in candidates {
+            do {
+                let usage = try await ClaudeWebQuotaFetcher.fetchUsage(cookieHeader: candidate.cookieHeader)
+                if candidate.shouldCacheOnSuccess {
+                    QuotaCookieCache.store(providerID: .claude, cookieHeader: candidate.cookieHeader, sourceLabel: candidate.provenanceLabel)
+                }
+                let snapshot = QuotaSnapshot(
+                    providerID: .claude,
+                    source: .web,
+                    primaryWindow: quotaWindow(
+                        label: descriptor.primaryLabel,
+                        usedRatio: min(max(usage.sessionPercentUsed / 100.0, 0), 1),
+                        detail: nil,
+                        resetsAt: usage.sessionResetsAt
+                    ),
+                    secondaryWindow: usage.weeklyPercentUsed.map {
+                        QuotaWindow(
+                            label: descriptor.secondaryLabel ?? "Weekly",
+                            usedRatio: min(max($0 / 100.0, 0), 1),
+                            detail: nil,
+                            resetsAt: usage.weeklyResetsAt
+                        )
+                    },
+                    tertiaryWindow: usage.opusPercentUsed.map {
+                        QuotaWindow(
+                            label: "Opus",
+                            usedRatio: min(max($0 / 100.0, 0), 1),
+                            detail: nil,
+                            resetsAt: usage.weeklyResetsAt
+                        )
+                    },
+                    credits: usage.extraUsageCost,
+                    identity: QuotaIdentity(
+                        email: usage.accountEmail,
+                        organization: usage.accountOrganization,
+                        plan: usage.loginMethod,
+                        detail: nil
+                    ),
+                    updatedAt: Date(),
+                    note: candidate.provenanceLabel
+                )
+                return QuotaProviderFetchOutcome(
+                    snapshot: snapshot,
+                    sourceLabel: "web",
+                    debugProbe: oauthCliDebugProbe(
+                        providerID: .claude,
+                        sourceLabel: "web",
+                        requestContext: requestContext,
+                        validation: "Claude web usage endpoints accepted.",
+                        lastFailure: lastFailure
+                    )
+                )
+            } catch {
+                lastError = error
+                if candidate.sourceKind == .cache {
+                    QuotaCookieCache.clear(providerID: .claude)
+                }
+            }
+        }
+
+        throw QuotaProviderFailure(
+            message: lastError?.localizedDescription ?? "Claude web session not found. Sign in on claude.ai, use Import Session, or paste a sessionKey Cookie header.",
+            sourceLabel: "web",
+            debugProbe: oauthCliDebugProbe(
+                providerID: .claude,
+                sourceLabel: "web",
+                requestContext: requestContext,
+                validation: "Claude web usage fetch failed.",
+                lastFailure: lastError?.localizedDescription ?? lastFailure
+            )
+        )
     }
 
     private func fetchViaCLI() async throws -> QuotaSnapshot {
+        try await fetchViaCLIOutcome().snapshot
+    }
+
+    private func fetchViaCLIOutcome(lastFailure: String? = nil) async throws -> QuotaProviderFetchOutcome {
         guard let binaryPath = cliBinaryPath() else {
             throw QuotaProviderError.commandFailed("claude not found.")
         }
 
-        let snapshot = try await ClaudeCLIQuotaProbe(binaryPath: binaryPath).fetch()
+        let cliSnapshot = try await ClaudeCLIQuotaProbe(binaryPath: binaryPath).fetch()
 
         func makeWindow(label: String, percentLeft: Int?, reset: String?) -> QuotaWindow? {
             guard let percentLeft else { return nil }
@@ -1031,33 +1492,44 @@ struct ClaudeQuotaProvider: QuotaProvider {
             )
         }
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .claude,
             source: .cli,
             primaryWindow: makeWindow(
                 label: descriptor.primaryLabel,
-                percentLeft: snapshot.sessionPercentLeft,
-                reset: snapshot.primaryResetDescription
+                percentLeft: cliSnapshot.sessionPercentLeft,
+                reset: cliSnapshot.primaryResetDescription
             ),
             secondaryWindow: makeWindow(
                 label: descriptor.secondaryLabel ?? "Weekly",
-                percentLeft: snapshot.weeklyPercentLeft,
-                reset: snapshot.secondaryResetDescription
+                percentLeft: cliSnapshot.weeklyPercentLeft,
+                reset: cliSnapshot.secondaryResetDescription
             ),
             tertiaryWindow: makeWindow(
                 label: "Opus",
-                percentLeft: snapshot.opusPercentLeft,
-                reset: snapshot.opusResetDescription
+                percentLeft: cliSnapshot.opusPercentLeft,
+                reset: cliSnapshot.opusResetDescription
             ),
             credits: nil,
             identity: QuotaIdentity(
-                email: snapshot.accountEmail,
-                organization: snapshot.accountOrganization,
-                plan: snapshot.loginMethod,
+                email: cliSnapshot.accountEmail,
+                organization: cliSnapshot.accountOrganization,
+                plan: cliSnapshot.loginMethod,
                 detail: nil
             ),
             updatedAt: Date(),
             note: nil
+        )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: "claude",
+            debugProbe: oauthCliDebugProbe(
+                providerID: .claude,
+                sourceLabel: "claude",
+                requestContext: binaryPath,
+                validation: "Claude CLI usage probe accepted.",
+                lastFailure: lastFailure
+            )
         )
     }
 
@@ -1083,6 +1555,28 @@ struct ClaudeQuotaProvider: QuotaProvider {
 
     private func cliBinaryPath() -> String? {
         QuotaRuntimeSupport.resolvedBinary(defaultBinary: "claude", providerID: .claude)
+    }
+
+    private func cookieCandidates() -> [QuotaResolvedCookieCandidate] {
+#if os(macOS) && canImport(SweetCookieKit)
+        let sessions = ClaudeBrowserCookieImporter.candidateSessions()
+#else
+        let sessions: [QuotaBrowserCookieSession] = []
+#endif
+        return QuotaCookieCandidateResolver.candidates(
+            providerID: .claude,
+            envKeys: ["CLAUDE_COOKIE_HEADER", "CLAUDE_SESSION_KEY"],
+            browserSessions: sessions,
+            normalizer: { raw in
+                guard let cleaned = QuotaRuntimeSupport.cleaned(raw), !cleaned.isEmpty else {
+                    return nil
+                }
+                if cleaned.hasPrefix("sk-ant-") {
+                    return "sessionKey=\(cleaned)"
+                }
+                return cleaned.replacingOccurrences(of: #"(?i)^cookie:\s*"#, with: "", options: .regularExpression)
+            }
+        )
     }
 }
 
@@ -1422,6 +1916,10 @@ struct GeminiQuotaProvider: QuotaProvider {
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
         switch GeminiQuotaCredentialsStore.settingsAuthType() {
         case .apiKey:
             throw QuotaProviderError.unsupported("Gemini API-key auth is not supported for account quota.")
@@ -1514,7 +2012,7 @@ struct GeminiQuotaProvider: QuotaProvider {
             return "Flash Lite \(Int((1 - remainingFraction) * 100))%"
         }()
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .gemini,
             source: .oauth,
             primaryWindow: primaryWindow,
@@ -1529,6 +2027,16 @@ struct GeminiQuotaProvider: QuotaProvider {
             ),
             updatedAt: Date(),
             note: noteText(codeAssist: codeAssist, flashLiteNote: flashLiteNote)
+        )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: "api",
+            debugProbe: oauthCliDebugProbe(
+                providerID: .gemini,
+                sourceLabel: "api",
+                requestContext: codeAssist.projectId.map { "Gemini quota project \($0)" } ?? "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+                validation: "Gemini quota buckets accepted."
+            )
         )
     }
 
@@ -1613,10 +2121,24 @@ struct KiroQuotaProvider: QuotaProvider {
     }
 
     func fetch() async throws -> QuotaSnapshot {
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
         try await ensureLoggedIn()
         let output = try await runUsageCommand()
         let snapshot = try parseUsage(output: output)
-        return makeSnapshot(from: snapshot)
+        let quotaSnapshot = makeSnapshot(from: snapshot)
+        return QuotaProviderFetchOutcome(
+            snapshot: quotaSnapshot,
+            sourceLabel: "cli",
+            debugProbe: oauthCliDebugProbe(
+                providerID: .kiro,
+                sourceLabel: "cli",
+                requestContext: binaryPath() ?? "kiro-cli",
+                validation: "Kiro CLI /usage output accepted."
+            )
+        )
     }
 
     private struct Snapshot {
