@@ -591,7 +591,7 @@ struct CodexQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .codex)
 
     func isConfigured() -> Bool {
-        CodexQuotaCredentialsStore.hasAuthFile() || cliBinaryPath() != nil
+        CodexQuotaCredentialsStore.hasAuthFile() || cliBinaryPath() != nil || !cookieCandidates().isEmpty
     }
 
     func fetch() async throws -> QuotaSnapshot {
@@ -605,6 +605,8 @@ struct CodexQuotaProvider: QuotaProvider {
         case .oauth:
             let credentials = try CodexQuotaCredentialsStore.load()
             return try await fetchViaOAuthOutcome(credentials)
+        case .web:
+            return try await fetchViaWebOutcome()
         default:
             break
         }
@@ -612,6 +614,26 @@ struct CodexQuotaProvider: QuotaProvider {
         if let credentials = try? CodexQuotaCredentialsStore.load() {
             do {
                 return try await fetchViaOAuthOutcome(credentials)
+            } catch {
+                if !cookieCandidates().isEmpty {
+                    do {
+                        return try await fetchViaWebOutcome(lastFailure: error.localizedDescription)
+                    } catch {
+                        if cliBinaryPath() != nil {
+                            return try await fetchViaRPCOutcome(lastFailure: error.localizedDescription)
+                        }
+                        throw error
+                    }
+                }
+                if cliBinaryPath() != nil {
+                    return try await fetchViaRPCOutcome(lastFailure: error.localizedDescription)
+                }
+                throw error
+            }
+        }
+        if !cookieCandidates().isEmpty {
+            do {
+                return try await fetchViaWebOutcome()
             } catch {
                 if cliBinaryPath() != nil {
                     return try await fetchViaRPCOutcome(lastFailure: error.localizedDescription)
@@ -770,6 +792,80 @@ struct CodexQuotaProvider: QuotaProvider {
         )
     }
 
+    @MainActor
+    private func fetchViaWebOutcome(lastFailure: String? = nil) async throws -> QuotaProviderFetchOutcome {
+        let requestContext = "https://chatgpt.com/codex/settings/usage"
+        let candidates = cookieCandidates()
+        guard !candidates.isEmpty else {
+            throw QuotaProviderError.missingCredentials("Codex web session not found. Sign in on chatgpt.com, use Import Session, or paste a Cookie header.")
+        }
+
+        var lastError: Error?
+        for candidate in candidates {
+            do {
+                let dashboard = try await CodexWebDashboardFetcher.fetch(cookieHeader: candidate.cookieHeader)
+                if candidate.shouldCacheOnSuccess {
+                    QuotaCookieCache.store(providerID: .codex, cookieHeader: candidate.cookieHeader, sourceLabel: candidate.provenanceLabel)
+                }
+
+                let snapshot = QuotaSnapshot(
+                    providerID: .codex,
+                    source: .web,
+                    primaryWindow: dashboard.primaryLimit,
+                    secondaryWindow: dashboard.secondaryLimit,
+                    tertiaryWindow: nil,
+                    credits: dashboard.creditsRemaining.map {
+                        QuotaCredits(
+                            label: "Credits",
+                            used: nil,
+                            total: nil,
+                            remaining: $0,
+                            currencyCode: "USD",
+                            isUnlimited: false
+                        )
+                    },
+                    identity: QuotaIdentity(
+                        email: dashboard.signedInEmail,
+                        organization: nil,
+                        plan: dashboard.accountPlan,
+                        detail: nil
+                    ),
+                    updatedAt: dashboard.updatedAt,
+                    note: candidate.provenanceLabel
+                )
+
+                return QuotaProviderFetchOutcome(
+                    snapshot: snapshot,
+                    sourceLabel: "openai-web",
+                    debugProbe: oauthCliDebugProbe(
+                        providerID: .codex,
+                        sourceLabel: "openai-web",
+                        requestContext: requestContext,
+                        validation: "Codex web dashboard accepted.",
+                        lastFailure: lastFailure
+                    )
+                )
+            } catch {
+                lastError = error
+                if candidate.sourceKind == .cache {
+                    QuotaCookieCache.clear(providerID: .codex)
+                }
+            }
+        }
+
+        throw QuotaProviderFailure(
+            message: lastError?.localizedDescription ?? "Codex web session not found. Sign in on chatgpt.com, use Import Session, or paste a Cookie header.",
+            sourceLabel: "openai-web",
+            debugProbe: oauthCliDebugProbe(
+                providerID: .codex,
+                sourceLabel: "openai-web",
+                requestContext: requestContext,
+                validation: "Codex web dashboard fetch failed.",
+                lastFailure: lastError?.localizedDescription ?? lastFailure
+            )
+        )
+    }
+
     private func jwtChatGPTPlanType(_ token: String?) -> String? {
         guard let token,
               let payload = QuotaUtilities.decodeJWTClaims(token),
@@ -782,6 +878,19 @@ struct CodexQuotaProvider: QuotaProvider {
 
     private func cliBinaryPath() -> String? {
         QuotaRuntimeSupport.resolvedBinary(defaultBinary: "codex", providerID: .codex)
+    }
+
+    private func cookieCandidates() -> [QuotaResolvedCookieCandidate] {
+#if os(macOS)
+        let sessions = CodexBrowserCookieImporter.candidateSessions()
+#else
+        let sessions: [QuotaBrowserCookieSession] = []
+#endif
+        return QuotaCookieCandidateResolver.candidates(
+            providerID: .codex,
+            envKeys: ["CODEX_COOKIE_HEADER", "CHATGPT_COOKIE_HEADER", "OPENAI_COOKIE_HEADER"],
+            browserSessions: sessions
+        )
     }
 }
 

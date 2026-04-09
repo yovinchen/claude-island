@@ -21,18 +21,20 @@ enum QuotaProviderRegistry {
         QuotaProviderDescriptor(
             id: .codex,
             sourceKind: .oauth,
-            supportedSources: [.oauth, .cli],
+            supportedSources: [.oauth, .cli, .web],
             cliBinaryName: "codex",
             primaryLabel: "Session",
             secondaryLabel: "Weekly",
-            credentialHint: "Reads ~/.codex/auth.json or Codex app-server",
-            credentialPlaceholder: nil,
-            supportsManualSecret: false,
+            credentialHint: "Reads ~/.codex/auth.json or Codex app-server, with chatgpt.com usage cookies as an optional web fallback.",
+            credentialPlaceholder: "__Secure-next-auth.session-token=…",
+            supportsManualSecret: true,
             defaultEnabled: true,
             refreshInterval: 300,
             dashboardURL: "https://chatgpt.com/codex/settings/usage",
             statusURL: "https://status.openai.com/",
-            sortPriority: 0
+            sortPriority: 0,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .claude,

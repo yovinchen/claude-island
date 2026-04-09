@@ -88,6 +88,15 @@ final class QuotaWebSessionImportRunner: NSObject {
                 readyHosts: ["claude.ai"],
                 readyPathHints: ["/settings", "usage"]
             )
+        case .codex:
+            return QuotaWebSessionImportConfiguration(
+                providerID: .codex,
+                windowTitle: "Codex Session Import",
+                initialURL: URL(string: "https://chatgpt.com/codex/settings/usage")!,
+                allowedCookieDomains: ["chatgpt.com", "openai.com"],
+                readyHosts: ["chatgpt.com"],
+                readyPathHints: ["/codex", "usage"]
+            )
         case .opencode:
             return QuotaWebSessionImportConfiguration(
                 providerID: .opencode,
