@@ -7,6 +7,9 @@ import Foundation
 #if canImport(FoundationXML)
 import FoundationXML
 #endif
+#if canImport(SweetCookieKit)
+import SweetCookieKit
+#endif
 
 // MARK: - Copilot
 
@@ -526,18 +529,82 @@ struct KimiWindow: Codable {
     let timeUnit: String
 }
 
+#if os(macOS) && canImport(SweetCookieKit)
+private enum KimiBrowserCookieImporter {
+    private static let cookieDomains = ["www.kimi.com", "kimi.com"]
+    private static let requiredCookieNames: Set<String> = ["kimi-auth"]
+
+    static func hasSession() -> Bool {
+        !candidateSessions().isEmpty
+    }
+
+    static func candidateSessions() -> [QuotaBrowserCookieSession] {
+        QuotaBrowserCookieImporter.candidateSessions(
+            domains: cookieDomains,
+            browserOrder: Browser.defaultImportOrder,
+            requiredCookieNames: requiredCookieNames,
+            allowDomainFallback: false
+        )
+    }
+}
+#endif
+
 struct KimiQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .kimi)
 
     func isConfigured() -> Bool {
-        authToken() != nil
+        if authToken() != nil {
+            return true
+        }
+        if QuotaCookieCache.load(providerID: .kimi) != nil {
+            return true
+        }
+#if os(macOS) && canImport(SweetCookieKit)
+        return KimiBrowserCookieImporter.hasSession()
+#else
+        return false
+#endif
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        guard let authToken = authToken() else {
-            throw QuotaProviderError.missingCredentials("Kimi auth token not configured.")
+        if let authToken = authToken() {
+            return try await fetchSnapshot(authToken: authToken, note: nil)
         }
 
+        if let cached = QuotaCookieCache.load(providerID: .kimi),
+           let token = authToken(fromCookieHeader: cached.cookieHeader)
+        {
+            do {
+                return try await fetchSnapshot(authToken: token, note: "Browser cache: \(cached.sourceLabel)")
+            } catch let error as QuotaProviderError {
+                if case .unauthorized = error {
+                    QuotaCookieCache.clear(providerID: .kimi)
+                } else {
+                    throw error
+                }
+            }
+        }
+
+#if os(macOS) && canImport(SweetCookieKit)
+        for session in KimiBrowserCookieImporter.candidateSessions() {
+            guard let token = session.cookieValue(named: "kimi-auth") else { continue }
+            do {
+                let snapshot = try await fetchSnapshot(authToken: token, note: "Auto-imported from \(session.sourceLabel)")
+                QuotaCookieCache.store(providerID: .kimi, cookieHeader: session.cookieHeader, sourceLabel: session.sourceLabel)
+                return snapshot
+            } catch let error as QuotaProviderError {
+                if case .unauthorized = error {
+                    continue
+                }
+                throw error
+            }
+        }
+#endif
+
+        throw QuotaProviderError.missingCredentials("Kimi auth token not configured.")
+    }
+
+    private func fetchSnapshot(authToken: String, note: String?) async throws -> QuotaSnapshot {
         let response = try await fetchUsage(authToken: authToken)
         guard let codingUsage = response.usages.first(where: { $0.scope == "FEATURE_CODING" }) else {
             throw QuotaProviderError.invalidResponse("Kimi response did not include FEATURE_CODING usage.")
@@ -580,12 +647,18 @@ struct KimiQuotaProvider: QuotaProvider {
                 detail: "Kimi For Coding"
             ),
             updatedAt: Date(),
-            note: nil
+            note: note
         )
     }
 
     private func authToken() -> String? {
         SavedProviderTokenResolver.token(for: QuotaProviderID.kimi, envKeys: ["KIMI_AUTH_TOKEN"])
+    }
+
+    private func authToken(fromCookieHeader cookieHeader: String) -> String? {
+        CookieHeaderNormalizer.pairs(from: cookieHeader)
+            .first(where: { $0.name == "kimi-auth" })?
+            .value
     }
 
     private func fetchUsage(authToken: String) async throws -> KimiUsageResponse {
