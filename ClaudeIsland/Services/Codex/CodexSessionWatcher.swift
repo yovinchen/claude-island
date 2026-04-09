@@ -27,20 +27,45 @@ class CodexSessionWatcher {
     private let logger = Logger(subsystem: "com.claudeisland", category: "CodexWatcher")
     private var fileDescriptor: Int32 = -1
     private var dispatchSource: DispatchSourceFileSystemObject?
-    private var knownEntries: [String: CodexSessionEntry] = [:]
+    private var transcriptPollTimer: DispatchSourceTimer?
+    private var indexedEntries: [String: CodexSessionEntry] = [:]
+    private var discoveredEntries: [String: CodexSessionEntry] = [:]
     private var transcriptStates: [String: TranscriptState] = [:]
     private let queue = DispatchQueue(label: "com.claudeisland.codex-watcher", qos: .utility)
+    private let transcriptPollInterval: TimeInterval = 3.0
 
     private init() {}
 
     func start() {
-        guard CodexSessionIndexStore.indexFileExists else {
-            logger.debug("Codex session_index.jsonl not found, skipping watcher")
-            return
-        }
-
         stop()
 
+        indexedEntries = entryMap(CodexSessionIndexStore.parse())
+
+        if CodexSessionIndexStore.indexFileExists {
+            startIndexWatcher()
+        } else {
+            logger.debug("Codex session_index.jsonl not found; relying on transcript polling")
+        }
+
+        startTranscriptPoller()
+        queue.async { [weak self] in
+            self?.handleTranscriptSweep()
+        }
+
+        logger.info("Codex session watcher started, tracking \(self.indexedEntries.count) indexed sessions")
+    }
+
+    func stop() {
+        dispatchSource?.cancel()
+        dispatchSource = nil
+        transcriptPollTimer?.cancel()
+        transcriptPollTimer = nil
+        indexedEntries.removeAll()
+        discoveredEntries.removeAll()
+        transcriptStates.removeAll()
+    }
+
+    private func startIndexWatcher() {
         let path = CodexSessionIndexStore.indexFilePath
         fileDescriptor = open(path, O_EVTONLY)
         guard fileDescriptor >= 0 else {
@@ -48,15 +73,11 @@ class CodexSessionWatcher {
             return
         }
 
-        let initialEntries = CodexSessionIndexStore.parse()
-        knownEntries = entryMap(initialEntries)
-
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fileDescriptor,
             eventMask: [.write, .extend, .rename],
             queue: queue
         )
-
         source.setEventHandler { [weak self] in
             self?.handleFileChange()
         }
@@ -70,32 +91,34 @@ class CodexSessionWatcher {
 
         dispatchSource = source
         source.resume()
-
-        logger.info("Codex session watcher started, tracking \(initialEntries.count) indexed sessions")
     }
 
-    func stop() {
-        dispatchSource?.cancel()
-        dispatchSource = nil
-        knownEntries.removeAll()
-        transcriptStates.removeAll()
+    private func startTranscriptPoller() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + transcriptPollInterval, repeating: transcriptPollInterval)
+        timer.setEventHandler { [weak self] in
+            self?.handleTranscriptSweep()
+        }
+        transcriptPollTimer = timer
+        timer.resume()
     }
 
     private func handleFileChange() {
+        let previousEntries = indexedEntries
         let entries = CodexSessionIndexStore.parse()
         let currentEntries = entryMap(entries)
 
-        let newIds = Set(currentEntries.keys).subtracting(knownEntries.keys)
-        let removedIds = Set(knownEntries.keys).subtracting(currentEntries.keys)
+        let newIds = Set(currentEntries.keys).subtracting(previousEntries.keys)
+        let removedIds = Set(previousEntries.keys).subtracting(currentEntries.keys)
         let updatedIds = currentEntries.compactMap { sessionId, entry -> String? in
-            guard let previous = knownEntries[sessionId] else { return nil }
+            guard let previous = previousEntries[sessionId] else { return nil }
             guard previous.updatedAt != entry.updatedAt else { return nil }
             return sessionId
         }
 
         for sessionId in newIds.sorted() {
             guard let entry = currentEntries[sessionId] else { continue }
-            bootstrapSession(entry, isNewSession: true)
+            bootstrapSession(entry, shouldEmitSessionStart: true)
         }
 
         for sessionId in updatedIds.sorted() {
@@ -104,24 +127,57 @@ class CodexSessionWatcher {
         }
 
         for sessionId in removedIds {
-            transcriptStates.removeValue(forKey: sessionId)
-            Task {
-                await SessionStore.shared.process(.sessionEnded(sessionId: sessionId))
+            if discoveredEntries[sessionId] == nil {
+                transcriptStates.removeValue(forKey: sessionId)
+                Task {
+                    await SessionStore.shared.process(.sessionEnded(sessionId: sessionId))
+                }
             }
         }
 
-        knownEntries = currentEntries
+        indexedEntries = currentEntries
     }
 
-    private func bootstrapSession(_ entry: CodexSessionEntry, isNewSession: Bool) {
+    private func handleTranscriptSweep() {
+        let descriptors = CodexSessionIndexStore.recentTranscriptDescriptors(limit: 32)
+        var nextDiscovered: [String: CodexSessionEntry] = [:]
+
+        for descriptor in descriptors {
+            let entry = indexedEntries[descriptor.sessionId]
+                ?? discoveredEntries[descriptor.sessionId]
+                ?? CodexSessionEntry(
+                    sessionId: descriptor.sessionId,
+                    threadName: nil,
+                    updatedAt: descriptor.updatedAt
+                )
+
+            nextDiscovered[descriptor.sessionId] = entry
+
+            if transcriptStates[descriptor.sessionId] == nil {
+                bootstrapSession(entry, shouldEmitSessionStart: false)
+                continue
+            }
+
+            if let state = transcriptStates[descriptor.sessionId] {
+                let fileChanged = state.path != descriptor.path || fileSize(at: descriptor.path) > state.lastOffset
+                if fileChanged {
+                    processTranscriptDelta(for: entry)
+                }
+            }
+        }
+
+        discoveredEntries = nextDiscovered
+    }
+
+    private func bootstrapSession(_ entry: CodexSessionEntry, shouldEmitSessionStart: Bool) {
         guard var state = resolveTranscriptState(for: entry.sessionId) else {
-            if isNewSession {
+            if shouldEmitSessionStart {
                 emitSessionStart(sessionId: entry.sessionId, cwd: "")
             }
             return
         }
 
-        if isNewSession {
+        if shouldEmitSessionStart {
             emitSessionStart(sessionId: entry.sessionId, cwd: state.cwd)
         }
 
@@ -143,7 +199,7 @@ class CodexSessionWatcher {
 
     private func processTranscriptDelta(for entry: CodexSessionEntry) {
         if transcriptStates[entry.sessionId] == nil {
-            bootstrapSession(entry, isNewSession: false)
+            bootstrapSession(entry, shouldEmitSessionStart: false)
             return
         }
 
@@ -174,14 +230,13 @@ class CodexSessionWatcher {
     }
 
     private func resolveTranscriptState(for sessionId: String) -> TranscriptState? {
-        guard let path = CodexSessionIndexStore.transcriptPath(for: sessionId) else {
+        guard let descriptor = CodexSessionIndexStore.transcriptDescriptor(for: sessionId) else {
             return nil
         }
 
-        let metadata = CodexSessionIndexStore.transcriptMetadata(for: sessionId)
         return TranscriptState(
-            path: path,
-            cwd: metadata?.cwd ?? "",
+            path: descriptor.path,
+            cwd: descriptor.metadata.cwd,
             lastOffset: 0,
             callMetadata: [:]
         )
