@@ -1270,6 +1270,170 @@ private enum ClaudeWebQuotaFetcher {
     }
 }
 
+#if DEBUG
+enum ClaudeWebQuotaTestingSupport {
+    static func parseSessionKey(cookieHeader: String) throws -> String {
+        try ClaudeWebQuotaFetcher.sessionKey(from: cookieHeader)
+    }
+
+    static func parseUsageData(data: Data, organizationID: String = "org_123", organizationName: String? = "Demo Org") throws -> QuotaSnapshot {
+        let organization = ClaudeWebOrganizationInfo(id: organizationID, name: organizationName)
+        let usage = try JSONDecoderPlaceholder.parseClaudeWebUsage(data: data, organization: organization)
+        return QuotaSnapshot(
+            providerID: .claude,
+            source: .web,
+            primaryWindow: quotaWindow(
+                label: QuotaProviderRegistry.descriptor(for: .claude).primaryLabel,
+                usedRatio: min(max(usage.sessionPercentUsed / 100.0, 0), 1),
+                detail: nil,
+                resetsAt: usage.sessionResetsAt
+            ),
+            secondaryWindow: usage.weeklyPercentUsed.map {
+                QuotaWindow(
+                    label: QuotaProviderRegistry.descriptor(for: .claude).secondaryLabel ?? "Weekly",
+                    usedRatio: min(max($0 / 100.0, 0), 1),
+                    detail: nil,
+                    resetsAt: usage.weeklyResetsAt
+                )
+            },
+            tertiaryWindow: usage.opusPercentUsed.map {
+                QuotaWindow(
+                    label: "Opus",
+                    usedRatio: min(max($0 / 100.0, 0), 1),
+                    detail: nil,
+                    resetsAt: usage.weeklyResetsAt
+                )
+            },
+            credits: usage.extraUsageCost,
+            identity: QuotaIdentity(
+                email: usage.accountEmail,
+                organization: usage.accountOrganization,
+                plan: usage.loginMethod,
+                detail: nil
+            ),
+            updatedAt: Date(),
+            note: nil
+        )
+    }
+
+    static func parseOverage(data: Data) -> QuotaCredits? {
+        JSONDecoderPlaceholder.parseClaudeOverage(data: data)
+    }
+
+    static func parseAccount(data: Data, organizationID: String = "org_123") -> (email: String?, loginMethod: String?)? {
+        JSONDecoderPlaceholder.parseClaudeAccount(data: data, organizationID: organizationID)
+    }
+
+    private enum JSONDecoderPlaceholder {
+        private struct DebugOverageSpendLimitResponse: Decodable {
+            let monthlyCreditLimit: Double?
+            let currency: String?
+            let usedCredits: Double?
+            let isEnabled: Bool?
+
+            enum CodingKeys: String, CodingKey {
+                case monthlyCreditLimit = "monthly_credit_limit"
+                case currency
+                case usedCredits = "used_credits"
+                case isEnabled = "is_enabled"
+            }
+        }
+
+        private struct DebugAccountResponse: Decodable {
+            let emailAddress: String?
+            let memberships: [Membership]?
+
+            enum CodingKeys: String, CodingKey {
+                case emailAddress = "email_address"
+                case memberships
+            }
+
+            struct Membership: Decodable {
+                let organization: Organization
+
+                struct Organization: Decodable {
+                    let uuid: String?
+                    let rateLimitTier: String?
+                    let billingType: String?
+
+                    enum CodingKeys: String, CodingKey {
+                        case uuid
+                        case rateLimitTier = "rate_limit_tier"
+                        case billingType = "billing_type"
+                    }
+                }
+            }
+        }
+
+        static func parseClaudeWebUsage(data: Data, organization: ClaudeWebOrganizationInfo) throws -> ClaudeWebUsageData {
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw QuotaProviderError.invalidResponse("Claude web usage payload is invalid.")
+            }
+            guard let fiveHour = json["five_hour"] as? [String: Any],
+                  let utilization = QuotaRuntimeSupport.doubleValue(fiveHour["utilization"])
+            else {
+                throw QuotaProviderError.invalidResponse("Claude web usage payload is missing five_hour utilization.")
+            }
+            return ClaudeWebUsageData(
+                sessionPercentUsed: utilization,
+                sessionResetsAt: QuotaUtilities.isoDate(QuotaRuntimeSupport.stringValue(fiveHour["resets_at"])),
+                weeklyPercentUsed: (json["seven_day"] as? [String: Any]).flatMap { QuotaRuntimeSupport.doubleValue($0["utilization"]) },
+                weeklyResetsAt: (json["seven_day"] as? [String: Any]).flatMap { QuotaUtilities.isoDate(QuotaRuntimeSupport.stringValue($0["resets_at"])) },
+                opusPercentUsed: ((json["seven_day_opus"] as? [String: Any]) ?? (json["seven_day_sonnet"] as? [String: Any]))
+                    .flatMap { QuotaRuntimeSupport.doubleValue($0["utilization"]) },
+                extraUsageCost: nil,
+                accountOrganization: organization.name,
+                accountEmail: nil,
+                loginMethod: nil
+            )
+        }
+
+        static func parseClaudeOverage(data: Data) -> QuotaCredits? {
+            guard let decoded = try? JSONDecoder().decode(DebugOverageSpendLimitResponse.self, from: data),
+                  decoded.isEnabled == true,
+                  let used = decoded.usedCredits,
+                  let limit = decoded.monthlyCreditLimit,
+                  let currency = decoded.currency
+            else {
+                return nil
+            }
+            let usedAmount = used / 100.0
+            let totalAmount = limit / 100.0
+            return QuotaCredits(
+                label: "Extra usage",
+                used: usedAmount,
+                total: totalAmount,
+                remaining: Swift.max(0.0, totalAmount - usedAmount),
+                currencyCode: currency,
+                isUnlimited: false
+            )
+        }
+
+        static func parseClaudeAccount(data: Data, organizationID: String) -> (email: String?, loginMethod: String?)? {
+            guard let decoded = try? JSONDecoder().decode(DebugAccountResponse.self, from: data) else {
+                return nil
+            }
+            let membership = decoded.memberships?.first(where: { $0.organization.uuid == organizationID }) ?? decoded.memberships?.first
+            return (
+                QuotaRuntimeSupport.cleaned(decoded.emailAddress),
+                cleanedDebugPlanName(rateLimitTier: membership?.organization.rateLimitTier, billingType: membership?.organization.billingType)
+            )
+        }
+
+        private static func cleanedDebugPlanName(rateLimitTier: String?, billingType: String?) -> String? {
+            let pieces = [rateLimitTier, billingType].compactMap { QuotaRuntimeSupport.cleaned($0) }
+            guard !pieces.isEmpty else { return nil }
+            return pieces
+                .joined(separator: " ")
+                .replacingOccurrences(of: "_", with: " ")
+                .split(separator: " ")
+                .map { $0.capitalized }
+                .joined(separator: " ")
+        }
+    }
+}
+#endif
+
 struct ClaudeQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .claude)
 
