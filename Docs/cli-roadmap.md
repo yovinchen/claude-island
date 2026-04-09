@@ -32,7 +32,7 @@
 | Kiro CLI | 部分支持 | `SessionSource.kiroCLI` + custom agent/wrapper 路线 |
 | Amp CLI | 部分支持 | `SessionSource.ampCLI` + plugin + `amp-exec` fallback + `amp-stream` helper |
 | Cline / Cline CLI | 部分支持 | `SessionSource.cline` + `ClineHookSource`，当前先做 hooks 监控与启用诊断 |
-| Qoder CLI | 仅文档 | `Docs/qoder-cli-hooks-gap.md`，当前明确不拆 source |
+| Qoder CLI | 部分支持 | `SessionSource.qoderCLI` + `claude-island-qodercli-json` wrapper，hooks 仍未拆 source |
 | Pi Coding Agent | 部分支持 | `SessionSource.pi` + `pi` / `pi-json` helpers，含 best-effort json 事件恢复 |
 | Crush | 部分支持 | `SessionSource.crush` + wrapper + `CrushLogWatcher` best-effort 结构化日志识别 |
 
@@ -64,7 +64,7 @@
 
 | CLI | 当前状态 | 推荐路线 |
 |-----|----------|----------|
-| Qoder CLI | 未接入 | 官方文档对 CLI hooks 能力仍有分叉，当前继续不拆 source |
+| Qoder CLI | 已部分接入 | 继续保持 wrapper-first，等官方 hooks 文档稳定后再评估是否升级为正式 hook source |
 
 ### D. 暂不接入为正式 CLI source 或保持 wrapper-first
 

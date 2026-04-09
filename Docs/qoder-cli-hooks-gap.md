@@ -11,8 +11,8 @@
 | 项目 | 状态 | 说明 |
 |------|------|------|
 | `qoder` source | ✅ | 仓库已支持 Qoder hooks，但实现更接近 IDE / extension 路线 |
-| `qoder_cli` 独立 source | ❌ | 当前没有 CLI 与 IDE 的 source 拆分 |
-| CLI 配置写入 | ❌ | 未写入 Qoder CLI 专属配置路径 |
+| `qoder_cli` wrapper-first 入口 | ✅ | 当前已新增 `qoder_cli` source 与 `claude-island-qodercli-json` helper |
+| CLI hooks 配置写入 | ❌ | 仍未写入 Qoder CLI 专属 hooks 配置路径 |
 
 ## 官方可用扩展面
 
@@ -43,13 +43,13 @@
 
 ## 当前决策
 
-1. 当前 **不拆** `SessionSource.qoderCLI`。
-2. README 继续把 `Qoder CLI` 单独列为未接入对象，用于表达能力边界，而不是代码层已有独立 source。
-3. 只有在后续确认 CLI 与 IDE 存在稳定且不同的配置入口时，才重新评估 source 拆分。
+1. 当前仍然**不把 Qoder CLI 提升为正式 hooks source**。
+2. 但仓库现在已提供一个 wrapper-first 的 `SessionSource.qoderCLI`，通过 `qodercli -p -f stream-json` 建立最小监控入口。
+3. 只有在后续确认 CLI hooks 能力稳定，且配置入口值得长期维护时，才重新评估 hooks source 拆分。
 
 ## 结论
 
-Qoder CLI **当前不应视为已支持**。虽然仓库里已有 `Qoder` 集成，但那套实现更接近 IDE hooks，不足以覆盖官方 CLI hooks 能力。
+Qoder CLI **当前已进入部分支持**。虽然它还不应视为正式 hooks source，但仓库已经有一个基于真实 `qodercli` 可执行面的 wrapper-first 监控入口。
 
 ## 基于本地代码的实现可行性
 
@@ -61,10 +61,11 @@ Qoder CLI **当前不应视为已支持**。虽然仓库里已有 `Qoder` 集成
 
 **最小实现方案**
 1. 继续保留现有 `qoder` source 代表 IDE / extension 路线。
-2. 若后续证实 CLI 配置入口稳定，再从当前 `qoder` 审批逻辑抽一层出来复用。
-3. 在真正拆分前，不把未落地的 `qoder_cli` 放进代码枚举和 UI。
+2. 当前已新增 `qoder_cli` wrapper-first 路线，先复用 `-p -f stream-json` 建立最小会话/错误监控。
+3. 当前 helper 还会过滤已知的 Qoder 日志轮转噪音，尽量只保留结构化 JSON 行和明确错误。
+4. 若后续证实 CLI hooks 配置入口稳定，再从当前 `qoder` 审批逻辑抽一层出来复用。
 
 **主要阻塞**
 - 当前阻塞点已经明确变成两件事：
   1. CLI hooks 能力本身是否已经稳定，不再与 Notification-only 文档冲突；
-  2. 配置入口是否足够稳定到值得拆 source。
+  2. wrapper-first 入口之外，是否真的值得再升级成正式 hooks source。

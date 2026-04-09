@@ -52,6 +52,11 @@ struct HookInstaller {
         OpenCodeHookSource(),
         CopilotHookSource(),
         HelperOnlySource(
+            sourceType: .qoderCLI,
+            displayName: "Qoder CLI",
+            helperNames: ["claude-island-qodercli-json"]
+        ),
+        HelperOnlySource(
             sourceType: .pi,
             displayName: "Pi Coding Agent",
             helperNames: ["claude-island-pi", "claude-island-pi-json"]
@@ -148,6 +153,7 @@ struct HookInstaller {
             ("claude-island-copilot-json", "sh", "claude-island-copilot-json"),
             ("claude-island-kimi-print", "sh", "claude-island-kimi-print"),
             ("claude-island-kiro", "sh", "claude-island-kiro"),
+            ("claude-island-qodercli-json", "sh", "claude-island-qodercli-json"),
             ("claude-island-pi-json", "sh", "claude-island-pi-json"),
             ("claude-island-pi", "sh", "claude-island-pi"),
             ("claude-island-crush", "sh", "claude-island-crush"),
@@ -313,6 +319,13 @@ struct HookInstaller {
         // Qoder: check ~/.qoder
         if fm.fileExists(atPath: "\(home)/.qoder") {
             installed.append(.qoder)
+        }
+
+        // Qoder CLI: check common executable locations
+        if fm.fileExists(atPath: "/usr/local/bin/qodercli") ||
+           fm.fileExists(atPath: "/opt/homebrew/bin/qodercli") ||
+           fm.fileExists(atPath: "\(home)/.local/bin/qodercli") {
+            installed.append(.qoderCLI)
         }
 
         // Droid (Factory): check ~/.factory

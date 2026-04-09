@@ -21,7 +21,7 @@ struct HookSetupView: View {
     private let allTools: [SessionSource] = [
         .claude, .cline, .codexCLI, .gemini, .cursor, .windsurf, .kimiCLI, .kiroCLI,
         .ampCLI, .opencode, .copilot, .pi, .crush,
-        .qoder, .droid, .codebuddy
+        .qoder, .qoderCLI, .droid, .codebuddy
     ]
 
     var body: some View {
@@ -287,6 +287,7 @@ struct ToolSetupRow: View {
         case .opencode: return "~/.config/opencode/plugins/"
         case .copilot: return "~/.copilot/config.json (+ optional .github/hooks/*.json, ~/.claude-island/bin/claude-island-copilot-json)"
         case .qoder: return "~/.qoder/settings.json (+ managed .qoder/settings.json / .qoder/settings.local.json when present)"
+        case .qoderCLI: return "~/.claude-island/bin/claude-island-qodercli-json"
         case .droid: return "~/.factory/settings.json"
         case .codebuddy: return "~/.codebuddy/settings.json"
         case .trae: return "~/.trae/settings.json"
