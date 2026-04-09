@@ -608,6 +608,13 @@ enum EventMapper {
             if let toolUseId = firstString(input["toolCallId"], nested(input, "toolResult", "toolCallId")) {
                 payload["tool_use_id"] = toolUseId
             }
+
+            if let toolFailure = copilotToolFailure(from: input) {
+                payload["event"] = "PostToolUseFailure"
+                payload["error"] = toolFailure.error
+                payload["message"] = toolFailure.message
+                payload["tool_response"] = toolFailure.response
+            }
         }
     }
 
@@ -738,6 +745,50 @@ enum EventMapper {
         }
 
         return normalizedCalls.first
+    }
+
+    private static func copilotToolFailure(from input: [String: Any]) -> (error: String, message: String, response: String)? {
+        let resultType = firstString(
+            nested(input, "toolResult", "resultType"),
+            nested(input, "tool_result", "resultType")
+        )?.lowercased()
+
+        let responseText = firstString(
+            nested(input, "toolResult", "textResultForLlm"),
+            nested(input, "toolResult", "textResult"),
+            nested(input, "toolResult", "sessionLog"),
+            nested(input, "tool_result", "textResultForLlm"),
+            nested(input, "tool_result", "textResult"),
+            nested(input, "tool_result", "sessionLog")
+        )
+
+        let nonZeroExitCode: Int? = {
+            guard let responseText else { return nil }
+            let pattern = #"<exited with exit code ([0-9]+)>"#
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+            let range = NSRange(responseText.startIndex..<responseText.endIndex, in: responseText)
+            guard let match = regex.firstMatch(in: responseText, range: range),
+                  match.numberOfRanges > 1,
+                  let captureRange = Range(match.range(at: 1), in: responseText),
+                  let code = Int(responseText[captureRange]),
+                  code != 0 else {
+                return nil
+            }
+            return code
+        }()
+
+        let explicitFailure = resultType == "failure" || resultType == "error"
+        guard explicitFailure || nonZeroExitCode != nil else { return nil }
+
+        let response = responseText ?? "Copilot tool execution failed"
+        let message: String
+        if let nonZeroExitCode {
+            message = "Tool failed (exit code \(nonZeroExitCode))"
+        } else {
+            message = "Tool failed"
+        }
+
+        return (error: response, message: message, response: response)
     }
 
     // MARK: - Helpers

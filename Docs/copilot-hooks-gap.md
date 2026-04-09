@@ -100,6 +100,7 @@ GitHub Copilot CLI（2026-02 GA）官方支持以下 Hook 事件：
 - 当前还会补充观察最新 `~/.copilot/session-state/*/events.jsonl`，把真实 `hook.end` 失败信号回流成通知，便于定位 hooks 本身的运行错误。
 - 当前还已经拿到一条真实 tool-using hooks 样本：`preToolUse / postToolUse / notification / agentStop / sessionEnd` 在本机 `events.jsonl` 中均已出现且 `success:true`。
 - 该真实样本也证明 `preToolUse` 输入里会出现 `toolCalls[]`（例如同时包含 `report_intent` 和真实 `bash` 调用）；当前 `EventMapper` 已优先挑出真正的执行型工具，避免把辅助调用误当成审批目标。
+- 进一步的真实失败样本还证明：即使 bash 返回非零退出码，Copilot 也可能继续发 `postToolUse` 而不是 `postToolUseFailure`；当前桥接已开始根据 `toolResult.textResultForLlm` 里的非零退出码把这类样本重映射成失败态。
 
 **改进方案**: 后续再决定是否支持扫描和注入项目级 `.github/hooks/` 目录中的配置文件。
 
