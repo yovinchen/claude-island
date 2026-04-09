@@ -30,7 +30,7 @@
 | 对象 | 当前状态 | 集成入口 | 受管安装 | 事件接入 | 阻塞审批 | 备注 |
 |------|----------|----------|:--------:|:--------:|:--------:|------|
 | Claude Code | 正式接入 | `settings.json` hooks | ✅ | ✅ | ✅ | 当前最完整的 hook source |
-| Cline / Cline CLI | 部分支持 | `~/Documents/Cline/Hooks` + `globalState.json` | ✅ | ✅ | ⚠️ | 已支持 native `cancel` 与 `contextModification`，返回结构也更贴近官方 shape，并会在存在时受管 `.clinerules/hooks`；更大返回面仍未做 |
+| Cline / Cline CLI | 部分支持 | `~/Documents/Cline/Hooks` + `globalState.json` | ✅ | ✅ | ⚠️ | 已支持 native `cancel` 与 `contextModification`，返回结构也更贴近官方 shape，并会在存在时受管 `.clinerules/hooks`；当前真实联调前还需先完成 `cline auth` |
 | Codex CLI | 正式接入 | `hooks.json` + `config.toml` + `notify` | ✅ | ✅ | ⚠️ | `PreToolUse/PostToolUse` 当前主要覆盖 Bash |
 | Codex Desktop | 正式接入 | `session_index.jsonl` + transcript watcher | — | ✅ | — | 非 hook source，走 transcript 解析 |
 | Gemini CLI | 正式接入 | `settings.json` hooks | ✅ | ✅ | — | 生命周期覆盖完整，项目级 `.gemini/settings.json` 在存在时也纳入受管安装，未做独立审批模型 |

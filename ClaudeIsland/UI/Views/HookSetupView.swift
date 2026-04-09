@@ -274,7 +274,7 @@ struct ToolSetupRow: View {
     private func configDescription(for source: SessionSource) -> String {
         switch source {
         case .claude: return "~/.claude/settings.json"
-        case .cline: return "~/Documents/Cline/Hooks + ~/.cline/data/globalState.json (+ managed .clinerules/hooks when present, or $CLINE_DIR/data/globalState.json)"
+        case .cline: return "~/Documents/Cline/Hooks + ~/.cline/data/globalState.json (+ managed .clinerules/hooks when present, or $CLINE_DIR/data/globalState.json; run 'cline auth' first)"
         case .codexCLI: return "~/.codex/hooks.json + ~/.codex/config.toml"
         case .gemini: return "~/.gemini/settings.json (+ managed .gemini/settings.json when present)"
         case .cursor: return "~/.cursor/hooks.json or .cursor/hooks.json"
