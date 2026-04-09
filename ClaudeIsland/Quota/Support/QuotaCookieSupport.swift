@@ -14,6 +14,20 @@ struct QuotaCookieCacheEntry: Codable, Sendable {
     let storedAt: Date
 }
 
+struct QuotaResolvedCookieCandidate: Sendable {
+    enum SourceKind: String, Sendable {
+        case manual
+        case cache
+        case browser
+    }
+
+    let cookieHeader: String
+    let sourceKind: SourceKind
+    let sourceLabel: String
+    let provenanceLabel: String
+    let shouldCacheOnSuccess: Bool
+}
+
 enum CookieHeaderNormalizer {
     struct Pair: Equatable, Sendable {
         let name: String
@@ -187,3 +201,77 @@ enum QuotaBrowserCookieImporter {
     }
 }
 #endif
+
+enum QuotaCookieCandidateResolver {
+    static func candidates(
+        providerID: QuotaProviderID,
+        envKeys: [String],
+        browserSessions: @autoclosure () -> [QuotaBrowserCookieSession],
+        normalizer: (String?) -> String? = defaultCookieHeaderNormalizer
+    ) -> [QuotaResolvedCookieCandidate] {
+        let mode = QuotaPreferences.webCredentialMode(for: providerID)
+        guard mode != .off else { return [] }
+
+        var candidates: [QuotaResolvedCookieCandidate] = []
+        if let manual = SavedProviderTokenResolver.tokenInfo(for: providerID, envKeys: envKeys),
+           let normalized = normalizer(manual.value)
+        {
+            candidates.append(
+                QuotaResolvedCookieCandidate(
+                    cookieHeader: normalized,
+                    sourceKind: .manual,
+                    sourceLabel: manual.sourceLabel,
+                    provenanceLabel: manual.sourceLabel,
+                    shouldCacheOnSuccess: false
+                )
+            )
+        }
+
+        guard mode != .manual else {
+            return deduplicated(candidates)
+        }
+
+        if let cached = QuotaCookieCache.load(providerID: providerID),
+           let normalized = normalizer(cached.cookieHeader)
+        {
+            candidates.append(
+                QuotaResolvedCookieCandidate(
+                    cookieHeader: normalized,
+                    sourceKind: .cache,
+                    sourceLabel: "Browser cache",
+                    provenanceLabel: "Browser cache: \(cached.sourceLabel)",
+                    shouldCacheOnSuccess: false
+                )
+            )
+        }
+
+#if os(macOS) && canImport(SweetCookieKit)
+        for session in browserSessions() {
+            guard let normalized = normalizer(session.cookieHeader) else { continue }
+            candidates.append(
+                QuotaResolvedCookieCandidate(
+                    cookieHeader: normalized,
+                    sourceKind: .browser,
+                    sourceLabel: "Browser session",
+                    provenanceLabel: "Auto-imported from \(session.sourceLabel)",
+                    shouldCacheOnSuccess: true
+                )
+            )
+        }
+#endif
+        return deduplicated(candidates)
+    }
+
+    private static func deduplicated(_ candidates: [QuotaResolvedCookieCandidate]) -> [QuotaResolvedCookieCandidate] {
+        var seen: Set<String> = []
+        return candidates.filter { seen.insert($0.cookieHeader).inserted }
+    }
+
+    nonisolated private static func defaultCookieHeaderNormalizer(_ raw: String?) -> String? {
+        guard var value = QuotaRuntimeSupport.cleaned(raw), !value.isEmpty else {
+            return nil
+        }
+        value = value.replacingOccurrences(of: #"(?i)^cookie:\s*"#, with: "", options: .regularExpression)
+        return value.isEmpty ? nil : value
+    }
+}

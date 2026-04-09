@@ -113,8 +113,10 @@ final class QuotaStore: ObservableObject {
 
         if trimmed.isEmpty {
             QuotaSecretStore.delete(account: account)
+            QuotaPreferences.setCredentialSourceLabel(nil, account: account)
         } else {
             QuotaSecretStore.save(trimmed, account: account)
+            QuotaPreferences.setCredentialSourceLabel("Manual credential", account: account)
         }
 
         rebuildConfigurationState(for: providerID)
@@ -182,15 +184,23 @@ final class QuotaStore: ObservableObject {
         records[providerID] = record
 
         do {
-            let snapshot = try await provider.fetch()
+            let outcome = try await provider.fetchOutcome()
+            let snapshot = outcome.snapshot
             record.snapshot = snapshot
             record.status = .connected
             record.diagnostics.lastError = nil
             record.diagnostics.lastSuccessAt = snapshot.updatedAt
-            record.diagnostics.sourceLabel = snapshot.source.rawValue
+            record.diagnostics.sourceLabel = outcome.sourceLabel ?? snapshot.source.rawValue
+            record.diagnostics.debugProbe = outcome.debugProbe
         } catch {
             record.status = record.snapshot == nil ? .error : .stale
             record.diagnostics.lastError = error.localizedDescription
+            if let carrier = error as? any QuotaDebugDiagnosticCarrier {
+                if let sourceLabel = carrier.quotaSourceLabelOverride {
+                    record.diagnostics.sourceLabel = sourceLabel
+                }
+                record.diagnostics.debugProbe = carrier.quotaDebugProbeSnapshot
+            }
         }
 
         records[providerID] = record

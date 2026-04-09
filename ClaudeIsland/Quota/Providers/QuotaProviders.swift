@@ -96,7 +96,8 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://github.com/settings/copilot",
             statusURL: "https://www.githubstatus.com/",
-            sortPriority: 4
+            sortPriority: 4,
+            interactiveLoginKind: .deviceFlow
         ),
         QuotaProviderDescriptor(
             id: .cursor,
@@ -112,7 +113,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://cursor.com",
             statusURL: nil,
-            sortPriority: 5
+            sortPriority: 5,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .alibaba,
@@ -128,7 +131,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://tongyi.aliyun.com/qianwen/coding-plan",
             statusURL: "https://status.aliyun.com",
-            sortPriority: 6
+            sortPriority: 6,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .factory,
@@ -144,7 +149,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://app.factory.ai/settings/billing",
             statusURL: "https://status.factory.ai",
-            sortPriority: 7
+            sortPriority: 7,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .opencode,
@@ -160,7 +167,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://opencode.ai",
             statusURL: nil,
-            sortPriority: 8
+            sortPriority: 8,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .amp,
@@ -176,7 +185,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://ampcode.com/settings",
             statusURL: nil,
-            sortPriority: 9
+            sortPriority: 9,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .augment,
@@ -192,7 +203,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://app.augmentcode.com",
             statusURL: nil,
-            sortPriority: 10
+            sortPriority: 10,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .kimi,
@@ -208,7 +221,8 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://www.kimi.com/code/console",
             statusURL: nil,
-            sortPriority: 11
+            sortPriority: 11,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .kilo,
@@ -288,7 +302,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://platform.minimax.io/user-center/payment/coding-plan?cycle_type=3",
             statusURL: nil,
-            sortPriority: 16
+            sortPriority: 16,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .ollama,
@@ -304,7 +320,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://ollama.com/settings",
             statusURL: nil,
-            sortPriority: 17
+            sortPriority: 17,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .openrouter,
@@ -336,7 +354,9 @@ enum QuotaProviderRegistry {
             refreshInterval: 300,
             dashboardURL: "https://www.perplexity.ai/account/usage",
             statusURL: "https://status.perplexity.com",
-            sortPriority: 19
+            sortPriority: 19,
+            interactiveLoginKind: .webLogin,
+            supportsWebCredentialMode: true
         ),
         QuotaProviderDescriptor(
             id: .warp,
@@ -405,15 +425,9 @@ enum QuotaProviderRegistry {
             case .cursor:
                 provider = CursorQuotaProvider()
             case .alibaba:
-                provider = UnsupportedQuotaProvider(
-                    descriptor: descriptor,
-                    message: "Alibaba quota provider parity is not implemented yet."
-                )
+                provider = AlibabaQuotaProvider()
             case .factory:
-                provider = UnsupportedQuotaProvider(
-                    descriptor: descriptor,
-                    message: "Droid quota provider parity is not implemented yet."
-                )
+                provider = FactoryQuotaProvider()
             case .opencode:
                 provider = OpenCodeQuotaProvider()
             case .amp:
@@ -431,22 +445,13 @@ enum QuotaProviderRegistry {
             case .jetbrains:
                 provider = JetBrainsQuotaProvider()
             case .minimax:
-                provider = UnsupportedQuotaProvider(
-                    descriptor: descriptor,
-                    message: "MiniMax quota provider parity is not implemented yet."
-                )
+                provider = MiniMaxQuotaProvider()
             case .ollama:
-                provider = UnsupportedQuotaProvider(
-                    descriptor: descriptor,
-                    message: "Ollama quota provider parity is not implemented yet."
-                )
+                provider = OllamaQuotaProvider()
             case .openrouter:
                 provider = OpenRouterQuotaProvider()
             case .perplexity:
-                provider = UnsupportedQuotaProvider(
-                    descriptor: descriptor,
-                    message: "Perplexity quota provider parity is not implemented yet."
-                )
+                provider = PerplexityQuotaProvider()
             case .warp:
                 provider = WarpQuotaProvider()
             case .kimiK2:
@@ -477,5 +482,9 @@ enum QuotaProviderRegistry {
 
     static func secretAccountName(for id: QuotaProviderID) -> String {
         "quota.token.\(id.rawValue)"
+    }
+
+    static func secretAccountName(for id: QuotaProviderID, suffix: String) -> String {
+        "quota.token.\(id.rawValue).\(suffix)"
     }
 }

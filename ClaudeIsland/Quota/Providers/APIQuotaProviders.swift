@@ -5,10 +5,33 @@
 
 import Foundation
 
+struct ResolvedProviderCredential: Sendable {
+    let value: String
+    let sourceLabel: String
+}
+
 enum SavedProviderTokenResolver {
     static func token(for providerID: QuotaProviderID, envKeys: [String]) -> String? {
-        let stored = QuotaSecretStore.read(account: QuotaProviderRegistry.secretAccountName(for: providerID))
-        return QuotaRuntimeSupport.envValue(envKeys, fallback: stored)
+        tokenInfo(for: providerID, envKeys: envKeys)?.value
+    }
+
+    static func tokenInfo(for providerID: QuotaProviderID, envKeys: [String]) -> ResolvedProviderCredential? {
+        tokenInfo(account: QuotaProviderRegistry.secretAccountName(for: providerID), envKeys: envKeys)
+    }
+
+    static func tokenInfo(account: String, envKeys: [String]) -> ResolvedProviderCredential? {
+        let environment = Foundation.ProcessInfo.processInfo.environment
+        for key in envKeys {
+            if let value = QuotaRuntimeSupport.cleaned(environment[key]) {
+                return ResolvedProviderCredential(value: value, sourceLabel: "Environment \(key)")
+            }
+        }
+
+        guard let stored = QuotaRuntimeSupport.cleaned(QuotaSecretStore.read(account: account)) else {
+            return nil
+        }
+        let label = QuotaPreferences.credentialSourceLabel(account: account) ?? "Manual credential"
+        return ResolvedProviderCredential(value: stored, sourceLabel: label)
     }
 }
 

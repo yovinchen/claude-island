@@ -25,6 +25,50 @@ private func mergedQuotaNote(_ notes: String?...) -> String? {
     return parts.joined(separator: " • ")
 }
 
+private func quotaDebugProbe(
+    providerID: QuotaProviderID,
+    attemptedSource: String?,
+    resolvedSource: String? = nil,
+    provenanceLabel: String? = nil,
+    requestContext: String? = nil,
+    lastValidation: String? = nil,
+    lastFailure: String? = nil
+) -> QuotaDebugProbeSnapshot {
+    QuotaDebugProbeSnapshot(
+        providerID: providerID,
+        attemptedSource: attemptedSource,
+        resolvedSource: resolvedSource,
+        provenanceLabel: provenanceLabel,
+        requestContext: requestContext,
+        lastValidation: lastValidation,
+        lastFailure: lastFailure
+    )
+}
+
+private func quotaProviderFailure(
+    providerID: QuotaProviderID,
+    sourceLabel: String?,
+    attemptedSource: String?,
+    resolvedSource: String? = nil,
+    provenanceLabel: String? = nil,
+    requestContext: String? = nil,
+    message: String
+) -> QuotaProviderFailure {
+    QuotaProviderFailure(
+        message: message,
+        sourceLabel: sourceLabel,
+        debugProbe: quotaDebugProbe(
+            providerID: providerID,
+            attemptedSource: attemptedSource,
+            resolvedSource: resolvedSource,
+            provenanceLabel: provenanceLabel,
+            requestContext: requestContext,
+            lastValidation: nil,
+            lastFailure: message
+        )
+    )
+}
+
 #if os(macOS) && canImport(SweetCookieKit)
 private enum CursorBrowserCookieImporter {
     private static let sessionCookieNames: Set<String> = [
@@ -212,59 +256,76 @@ struct CursorQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .cursor)
 
     func isConfigured() -> Bool {
-        if cookieHeader() != nil {
-            return true
-        }
-        if QuotaCookieCache.load(providerID: .cursor) != nil {
-            return true
-        }
-#if os(macOS) && canImport(SweetCookieKit)
-        return CursorBrowserCookieImporter.hasSession()
-#else
-        return false
-#endif
+        !cookieCandidates().isEmpty
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        if let cookieHeader = cookieHeader() {
-            return try await fetchSnapshot(cookieHeader: cookieHeader, sourceNote: nil)
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        let candidates = cookieCandidates()
+        let requestContext = "https://cursor.com/api/usage-summary"
+        guard !candidates.isEmpty else {
+            throw quotaProviderFailure(
+                providerID: .cursor,
+                sourceLabel: "Web login",
+                attemptedSource: QuotaPreferences.webCredentialMode(for: .cursor).rawValue,
+                requestContext: requestContext,
+                message: "Cursor session not found. Sign in on cursor.com, use Import Session, or paste a Cookie header."
+            )
         }
 
-        if let cached = QuotaCookieCache.load(providerID: .cursor) {
-            do {
-                return try await fetchSnapshot(
-                    cookieHeader: cached.cookieHeader,
-                    sourceNote: "Browser cache: \(cached.sourceLabel)"
-                )
-            } catch let error as QuotaProviderError {
-                if case .unauthorized = error {
-                    QuotaCookieCache.clear(providerID: .cursor)
-                } else {
-                    throw error
-                }
-            }
-        }
-
-#if os(macOS) && canImport(SweetCookieKit)
-        for session in CursorBrowserCookieImporter.candidateSessions() {
+        var lastError: Error?
+        for candidate in candidates {
             do {
                 let snapshot = try await fetchSnapshot(
-                    cookieHeader: session.cookieHeader,
-                    sourceNote: "Auto-imported from \(session.sourceLabel)"
+                    cookieHeader: candidate.cookieHeader,
+                    sourceNote: candidate.provenanceLabel
                 )
-                QuotaCookieCache.store(providerID: .cursor, cookieHeader: session.cookieHeader, sourceLabel: session.sourceLabel)
-                return snapshot
-            } catch let error as QuotaProviderError {
-                if case .unauthorized = error {
-                    continue
+                if candidate.shouldCacheOnSuccess {
+                    QuotaCookieCache.store(
+                        providerID: .cursor,
+                        cookieHeader: candidate.cookieHeader,
+                        sourceLabel: candidate.provenanceLabel
+                    )
                 }
-                throw error
+                return QuotaProviderFetchOutcome(
+                    snapshot: snapshot,
+                    sourceLabel: candidate.sourceLabel,
+                    debugProbe: quotaDebugProbe(
+                        providerID: .cursor,
+                        attemptedSource: candidate.sourceKind.rawValue,
+                        resolvedSource: candidate.sourceKind.rawValue,
+                        provenanceLabel: candidate.provenanceLabel,
+                        requestContext: requestContext,
+                        lastValidation: "Cursor usage summary accepted."
+                    )
+                )
+            } catch let error as QuotaProviderError {
+                lastError = error
+                if case .unauthorized = error {
+                    if candidate.sourceKind == .cache {
+                        QuotaCookieCache.clear(providerID: .cursor)
+                    }
+                    if candidate.sourceKind != .manual {
+                        continue
+                    }
+                }
+            } catch {
+                lastError = error
             }
         }
-#endif
 
-        throw QuotaProviderError.missingCredentials(
-            "Cursor session not found. Sign in on cursor.com, use Import Session, or paste a Cookie header."
+        let message = lastError?.localizedDescription
+            ?? "Cursor session not found. Sign in on cursor.com, use Import Session, or paste a Cookie header."
+        throw quotaProviderFailure(
+            providerID: .cursor,
+            sourceLabel: "Web login",
+            attemptedSource: candidates.map(\.sourceLabel).joined(separator: " -> "),
+            provenanceLabel: candidates.last?.provenanceLabel,
+            requestContext: requestContext,
+            message: message
         )
     }
 
@@ -402,9 +463,16 @@ struct CursorQuotaProvider: QuotaProvider {
         )
     }
 
-    private func cookieHeader() -> String? {
-        normalizedCookieHeader(
-            SavedProviderTokenResolver.token(for: QuotaProviderID.cursor, envKeys: ["CURSOR_COOKIE_HEADER"])
+    private func cookieCandidates() -> [QuotaResolvedCookieCandidate] {
+#if os(macOS) && canImport(SweetCookieKit)
+        let sessions = CursorBrowserCookieImporter.candidateSessions()
+#else
+        let sessions: [QuotaBrowserCookieSession] = []
+#endif
+        return QuotaCookieCandidateResolver.candidates(
+            providerID: .cursor,
+            envKeys: ["CURSOR_COOKIE_HEADER"],
+            browserSessions: sessions
         )
     }
 
@@ -490,60 +558,76 @@ struct OpenCodeQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .opencode)
 
     func isConfigured() -> Bool {
-        if cookieHeader() != nil {
-            return true
-        }
-        if QuotaCookieCache.load(providerID: .opencode) != nil {
-            return true
-        }
-#if os(macOS) && canImport(SweetCookieKit)
-        return OpenCodeBrowserCookieImporter.hasSession()
-#else
-        return false
-#endif
+        !cookieCandidates().isEmpty
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        if let cookieHeader = cookieHeader() {
-            return try await fetchSnapshot(cookieHeader: cookieHeader, sourceNote: nil)
-        }
-
-        if let cached = QuotaCookieCache.load(providerID: .opencode) {
-            do {
-                return try await fetchSnapshot(cookieHeader: cached.cookieHeader, sourceNote: "Browser cache: \(cached.sourceLabel)")
-            } catch let error as QuotaProviderError {
-                if case .unauthorized = error {
-                    QuotaCookieCache.clear(providerID: .opencode)
-                } else {
-                    throw error
-                }
-            }
-        }
-
-#if os(macOS) && canImport(SweetCookieKit)
-        for session in OpenCodeBrowserCookieImporter.candidateSessions() {
-            do {
-                let snapshot = try await fetchSnapshot(
-                    cookieHeader: session.cookieHeader,
-                    sourceNote: "Auto-imported from \(session.sourceLabel)"
-                )
-                QuotaCookieCache.store(providerID: .opencode, cookieHeader: session.cookieHeader, sourceLabel: session.sourceLabel)
-                return snapshot
-            } catch let error as QuotaProviderError {
-                if case .unauthorized = error {
-                    continue
-                }
-                throw error
-            }
-        }
-#endif
-
-        throw QuotaProviderError.missingCredentials("OpenCode session not found. Sign in on opencode.ai, import session, or paste a Cookie header.")
+        try await fetchOutcome().snapshot
     }
 
-    private func cookieHeader() -> String? {
-        normalizedCookieHeader(
-            SavedProviderTokenResolver.token(for: QuotaProviderID.opencode, envKeys: ["OPENCODE_COOKIE_HEADER"])
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        let candidates = cookieCandidates()
+        let requestContext = "https://opencode.ai/_server"
+        guard !candidates.isEmpty else {
+            throw quotaProviderFailure(
+                providerID: .opencode,
+                sourceLabel: "Web login",
+                attemptedSource: QuotaPreferences.webCredentialMode(for: .opencode).rawValue,
+                requestContext: requestContext,
+                message: "OpenCode session not found. Sign in on opencode.ai, import session, or paste a Cookie header."
+            )
+        }
+
+        var lastError: Error?
+        for candidate in candidates {
+            do {
+                let snapshot = try await fetchSnapshot(cookieHeader: candidate.cookieHeader, sourceNote: candidate.provenanceLabel)
+                if candidate.shouldCacheOnSuccess {
+                    QuotaCookieCache.store(providerID: .opencode, cookieHeader: candidate.cookieHeader, sourceLabel: candidate.provenanceLabel)
+                }
+                return QuotaProviderFetchOutcome(
+                    snapshot: snapshot,
+                    sourceLabel: candidate.sourceLabel,
+                    debugProbe: quotaDebugProbe(
+                        providerID: .opencode,
+                        attemptedSource: candidate.sourceKind.rawValue,
+                        resolvedSource: candidate.sourceKind.rawValue,
+                        provenanceLabel: candidate.provenanceLabel,
+                        requestContext: requestContext,
+                        lastValidation: "OpenCode workspace usage accepted."
+                    )
+                )
+            } catch let error as QuotaProviderError {
+                lastError = error
+                if case .unauthorized = error {
+                    if candidate.sourceKind == .cache { QuotaCookieCache.clear(providerID: .opencode) }
+                    if candidate.sourceKind != .manual { continue }
+                }
+            } catch {
+                lastError = error
+            }
+        }
+
+        throw quotaProviderFailure(
+            providerID: .opencode,
+            sourceLabel: "Web login",
+            attemptedSource: candidates.map(\.sourceLabel).joined(separator: " -> "),
+            provenanceLabel: candidates.last?.provenanceLabel,
+            requestContext: requestContext,
+            message: lastError?.localizedDescription ?? "OpenCode session not found. Sign in on opencode.ai, import session, or paste a Cookie header."
+        )
+    }
+
+    private func cookieCandidates() -> [QuotaResolvedCookieCandidate] {
+#if os(macOS) && canImport(SweetCookieKit)
+        let sessions = OpenCodeBrowserCookieImporter.candidateSessions()
+#else
+        let sessions: [QuotaBrowserCookieSession] = []
+#endif
+        return QuotaCookieCandidateResolver.candidates(
+            providerID: .opencode,
+            envKeys: ["OPENCODE_COOKIE_HEADER"],
+            browserSessions: sessions
         )
     }
 
@@ -848,60 +932,76 @@ struct AmpQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .amp)
 
     func isConfigured() -> Bool {
-        if cookieHeader() != nil {
-            return true
-        }
-        if QuotaCookieCache.load(providerID: .amp) != nil {
-            return true
-        }
-#if os(macOS) && canImport(SweetCookieKit)
-        return AmpBrowserCookieImporter.hasSession()
-#else
-        return false
-#endif
+        !cookieCandidates().isEmpty
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        if let cookieHeader = cookieHeader() {
-            return try await fetchSnapshot(cookieHeader: cookieHeader, sourceNote: nil)
-        }
-
-        if let cached = QuotaCookieCache.load(providerID: .amp) {
-            do {
-                return try await fetchSnapshot(cookieHeader: cached.cookieHeader, sourceNote: "Browser cache: \(cached.sourceLabel)")
-            } catch let error as QuotaProviderError {
-                if case .unauthorized = error {
-                    QuotaCookieCache.clear(providerID: .amp)
-                } else {
-                    throw error
-                }
-            }
-        }
-
-#if os(macOS) && canImport(SweetCookieKit)
-        for session in AmpBrowserCookieImporter.candidateSessions() {
-            do {
-                let snapshot = try await fetchSnapshot(
-                    cookieHeader: session.cookieHeader,
-                    sourceNote: "Auto-imported from \(session.sourceLabel)"
-                )
-                QuotaCookieCache.store(providerID: .amp, cookieHeader: session.cookieHeader, sourceLabel: session.sourceLabel)
-                return snapshot
-            } catch let error as QuotaProviderError {
-                if case .unauthorized = error {
-                    continue
-                }
-                throw error
-            }
-        }
-#endif
-
-        throw QuotaProviderError.missingCredentials("Amp session not found. Sign in on ampcode.com, import session, or paste a Cookie header.")
+        try await fetchOutcome().snapshot
     }
 
-    private func cookieHeader() -> String? {
-        normalizedCookieHeader(
-            SavedProviderTokenResolver.token(for: QuotaProviderID.amp, envKeys: ["AMP_COOKIE_HEADER"])
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        let candidates = cookieCandidates()
+        let requestContext = "https://ampcode.com/settings"
+        guard !candidates.isEmpty else {
+            throw quotaProviderFailure(
+                providerID: .amp,
+                sourceLabel: "Web login",
+                attemptedSource: QuotaPreferences.webCredentialMode(for: .amp).rawValue,
+                requestContext: requestContext,
+                message: "Amp session not found. Sign in on ampcode.com, import session, or paste a Cookie header."
+            )
+        }
+
+        var lastError: Error?
+        for candidate in candidates {
+            do {
+                let snapshot = try await fetchSnapshot(cookieHeader: candidate.cookieHeader, sourceNote: candidate.provenanceLabel)
+                if candidate.shouldCacheOnSuccess {
+                    QuotaCookieCache.store(providerID: .amp, cookieHeader: candidate.cookieHeader, sourceLabel: candidate.provenanceLabel)
+                }
+                return QuotaProviderFetchOutcome(
+                    snapshot: snapshot,
+                    sourceLabel: candidate.sourceLabel,
+                    debugProbe: quotaDebugProbe(
+                        providerID: .amp,
+                        attemptedSource: candidate.sourceKind.rawValue,
+                        resolvedSource: candidate.sourceKind.rawValue,
+                        provenanceLabel: candidate.provenanceLabel,
+                        requestContext: requestContext,
+                        lastValidation: "Amp settings usage accepted."
+                    )
+                )
+            } catch let error as QuotaProviderError {
+                lastError = error
+                if case .unauthorized = error {
+                    if candidate.sourceKind == .cache { QuotaCookieCache.clear(providerID: .amp) }
+                    if candidate.sourceKind != .manual { continue }
+                }
+            } catch {
+                lastError = error
+            }
+        }
+
+        throw quotaProviderFailure(
+            providerID: .amp,
+            sourceLabel: "Web login",
+            attemptedSource: candidates.map(\.sourceLabel).joined(separator: " -> "),
+            provenanceLabel: candidates.last?.provenanceLabel,
+            requestContext: requestContext,
+            message: lastError?.localizedDescription ?? "Amp session not found. Sign in on ampcode.com, import session, or paste a Cookie header."
+        )
+    }
+
+    private func cookieCandidates() -> [QuotaResolvedCookieCandidate] {
+#if os(macOS) && canImport(SweetCookieKit)
+        let sessions = AmpBrowserCookieImporter.candidateSessions()
+#else
+        let sessions: [QuotaBrowserCookieSession] = []
+#endif
+        return QuotaCookieCandidateResolver.candidates(
+            providerID: .amp,
+            envKeys: ["AMP_COOKIE_HEADER"],
+            browserSessions: sessions
         )
     }
 
@@ -1094,60 +1194,76 @@ struct AugmentQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .augment)
 
     func isConfigured() -> Bool {
-        if cookieHeader() != nil {
-            return true
-        }
-        if QuotaCookieCache.load(providerID: .augment) != nil {
-            return true
-        }
-#if os(macOS) && canImport(SweetCookieKit)
-        return AugmentBrowserCookieImporter.hasSession()
-#else
-        return false
-#endif
+        !cookieCandidates().isEmpty
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        if let cookieHeader = cookieHeader() {
-            return try await fetchSnapshot(cookieHeader: cookieHeader, sourceNote: nil)
-        }
-
-        if let cached = QuotaCookieCache.load(providerID: .augment) {
-            do {
-                return try await fetchSnapshot(cookieHeader: cached.cookieHeader, sourceNote: "Browser cache: \(cached.sourceLabel)")
-            } catch let error as QuotaProviderError {
-                if case .unauthorized = error {
-                    QuotaCookieCache.clear(providerID: .augment)
-                } else {
-                    throw error
-                }
-            }
-        }
-
-#if os(macOS) && canImport(SweetCookieKit)
-        for session in AugmentBrowserCookieImporter.candidateSessions() {
-            do {
-                let snapshot = try await fetchSnapshot(
-                    cookieHeader: session.cookieHeader,
-                    sourceNote: "Auto-imported from \(session.sourceLabel)"
-                )
-                QuotaCookieCache.store(providerID: .augment, cookieHeader: session.cookieHeader, sourceLabel: session.sourceLabel)
-                return snapshot
-            } catch let error as QuotaProviderError {
-                if case .unauthorized = error {
-                    continue
-                }
-                throw error
-            }
-        }
-#endif
-
-        throw QuotaProviderError.missingCredentials("Augment session not found. Sign in on app.augmentcode.com, import session, or paste a Cookie header.")
+        try await fetchOutcome().snapshot
     }
 
-    private func cookieHeader() -> String? {
-        normalizedCookieHeader(
-            SavedProviderTokenResolver.token(for: QuotaProviderID.augment, envKeys: ["AUGMENT_COOKIE_HEADER"])
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        let candidates = cookieCandidates()
+        let requestContext = "https://app.augmentcode.com/api/credits"
+        guard !candidates.isEmpty else {
+            throw quotaProviderFailure(
+                providerID: .augment,
+                sourceLabel: "Web login",
+                attemptedSource: QuotaPreferences.webCredentialMode(for: .augment).rawValue,
+                requestContext: requestContext,
+                message: "Augment session not found. Sign in on app.augmentcode.com, import session, or paste a Cookie header."
+            )
+        }
+
+        var lastError: Error?
+        for candidate in candidates {
+            do {
+                let snapshot = try await fetchSnapshot(cookieHeader: candidate.cookieHeader, sourceNote: candidate.provenanceLabel)
+                if candidate.shouldCacheOnSuccess {
+                    QuotaCookieCache.store(providerID: .augment, cookieHeader: candidate.cookieHeader, sourceLabel: candidate.provenanceLabel)
+                }
+                return QuotaProviderFetchOutcome(
+                    snapshot: snapshot,
+                    sourceLabel: candidate.sourceLabel,
+                    debugProbe: quotaDebugProbe(
+                        providerID: .augment,
+                        attemptedSource: candidate.sourceKind.rawValue,
+                        resolvedSource: candidate.sourceKind.rawValue,
+                        provenanceLabel: candidate.provenanceLabel,
+                        requestContext: requestContext,
+                        lastValidation: "Augment credits accepted."
+                    )
+                )
+            } catch let error as QuotaProviderError {
+                lastError = error
+                if case .unauthorized = error {
+                    if candidate.sourceKind == .cache { QuotaCookieCache.clear(providerID: .augment) }
+                    if candidate.sourceKind != .manual { continue }
+                }
+            } catch {
+                lastError = error
+            }
+        }
+
+        throw quotaProviderFailure(
+            providerID: .augment,
+            sourceLabel: "Web login",
+            attemptedSource: candidates.map(\.sourceLabel).joined(separator: " -> "),
+            provenanceLabel: candidates.last?.provenanceLabel,
+            requestContext: requestContext,
+            message: lastError?.localizedDescription ?? "Augment session not found. Sign in on app.augmentcode.com, import session, or paste a Cookie header."
+        )
+    }
+
+    private func cookieCandidates() -> [QuotaResolvedCookieCandidate] {
+#if os(macOS) && canImport(SweetCookieKit)
+        let sessions = AugmentBrowserCookieImporter.candidateSessions()
+#else
+        let sessions: [QuotaBrowserCookieSession] = []
+#endif
+        return QuotaCookieCandidateResolver.candidates(
+            providerID: .augment,
+            envKeys: ["AUGMENT_COOKIE_HEADER"],
+            browserSessions: sessions
         )
     }
 

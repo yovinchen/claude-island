@@ -122,6 +122,31 @@ enum QuotaSourceKind: String, Codable, Sendable {
     case web
 }
 
+enum QuotaWebCredentialMode: String, CaseIterable, Codable, Identifiable, Sendable {
+    case auto
+    case manual
+    case off
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .auto:
+            return String(localized: "quota.web_credential_mode.auto")
+        case .manual:
+            return String(localized: "quota.web_credential_mode.manual")
+        case .off:
+            return String(localized: "quota.web_credential_mode.off")
+        }
+    }
+}
+
+enum QuotaInteractiveLoginKind: String, Codable, Sendable {
+    case none
+    case deviceFlow
+    case webLogin
+}
+
 enum QuotaSourcePreference: String, CaseIterable, Codable, Identifiable, Sendable {
     case auto
     case oauth
@@ -238,6 +263,17 @@ struct QuotaDiagnostics: Equatable, Sendable {
     var lastSuccessAt: Date?
     var lastRefreshAttemptAt: Date?
     var sourceLabel: String?
+    var debugProbe: QuotaDebugProbeSnapshot?
+}
+
+struct QuotaDebugProbeSnapshot: Equatable, Sendable {
+    let providerID: QuotaProviderID
+    let attemptedSource: String?
+    let resolvedSource: String?
+    let provenanceLabel: String?
+    let requestContext: String?
+    let lastValidation: String?
+    let lastFailure: String?
 }
 
 struct QuotaProviderDescriptor: Equatable, Sendable {
@@ -255,6 +291,44 @@ struct QuotaProviderDescriptor: Equatable, Sendable {
     let dashboardURL: String?
     let statusURL: String?
     let sortPriority: Int
+    let interactiveLoginKind: QuotaInteractiveLoginKind
+    let supportsWebCredentialMode: Bool
+
+    init(
+        id: QuotaProviderID,
+        sourceKind: QuotaSourceKind,
+        supportedSources: [QuotaSourceKind],
+        cliBinaryName: String?,
+        primaryLabel: String,
+        secondaryLabel: String?,
+        credentialHint: String,
+        credentialPlaceholder: String?,
+        supportsManualSecret: Bool,
+        defaultEnabled: Bool,
+        refreshInterval: TimeInterval,
+        dashboardURL: String?,
+        statusURL: String?,
+        sortPriority: Int,
+        interactiveLoginKind: QuotaInteractiveLoginKind = .none,
+        supportsWebCredentialMode: Bool = false
+    ) {
+        self.id = id
+        self.sourceKind = sourceKind
+        self.supportedSources = supportedSources
+        self.cliBinaryName = cliBinaryName
+        self.primaryLabel = primaryLabel
+        self.secondaryLabel = secondaryLabel
+        self.credentialHint = credentialHint
+        self.credentialPlaceholder = credentialPlaceholder
+        self.supportsManualSecret = supportsManualSecret
+        self.defaultEnabled = defaultEnabled
+        self.refreshInterval = refreshInterval
+        self.dashboardURL = dashboardURL
+        self.statusURL = statusURL
+        self.sortPriority = sortPriority
+        self.interactiveLoginKind = interactiveLoginKind
+        self.supportsWebCredentialMode = supportsWebCredentialMode
+    }
 }
 
 struct QuotaProviderRecord: Identifiable, Equatable, Sendable {

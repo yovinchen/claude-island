@@ -106,6 +106,60 @@ final class QuotaWebSessionImportRunner: NSObject {
                 readyHosts: ["app.augmentcode.com"],
                 readyPathHints: []
             )
+        case .alibaba:
+            return QuotaWebSessionImportConfiguration(
+                providerID: .alibaba,
+                windowTitle: "Alibaba Session Import",
+                initialURL: URL(string: "https://modelstudio.console.alibabacloud.com/ap-southeast-1/?tab=coding-plan#/efm/detail")!,
+                allowedCookieDomains: ["modelstudio.console.alibabacloud.com", "bailian.console.aliyun.com", "alibabacloud.com", "aliyun.com"],
+                readyHosts: ["modelstudio.console.alibabacloud.com", "bailian.console.aliyun.com"],
+                readyPathHints: ["coding", "detail"]
+            )
+        case .factory:
+            return QuotaWebSessionImportConfiguration(
+                providerID: .factory,
+                windowTitle: "Droid Session Import",
+                initialURL: URL(string: "https://app.factory.ai/settings/billing")!,
+                allowedCookieDomains: ["factory.ai", "app.factory.ai", "auth.factory.ai", "api.factory.ai"],
+                readyHosts: ["app.factory.ai", "auth.factory.ai"],
+                readyPathHints: ["settings", "billing"]
+            )
+        case .minimax:
+            return QuotaWebSessionImportConfiguration(
+                providerID: .minimax,
+                windowTitle: "MiniMax Session Import",
+                initialURL: URL(string: "https://platform.minimax.io/user-center/payment/coding-plan?cycle_type=3")!,
+                allowedCookieDomains: ["platform.minimax.io", "minimax.io", "platform.minimaxi.com", "minimaxi.com"],
+                readyHosts: ["platform.minimax.io", "platform.minimaxi.com"],
+                readyPathHints: ["coding-plan"]
+            )
+        case .ollama:
+            return QuotaWebSessionImportConfiguration(
+                providerID: .ollama,
+                windowTitle: "Ollama Session Import",
+                initialURL: URL(string: "https://ollama.com/settings")!,
+                allowedCookieDomains: ["ollama.com", "www.ollama.com"],
+                readyHosts: ["ollama.com", "www.ollama.com"],
+                readyPathHints: ["settings"]
+            )
+        case .perplexity:
+            return QuotaWebSessionImportConfiguration(
+                providerID: .perplexity,
+                windowTitle: "Perplexity Session Import",
+                initialURL: URL(string: "https://www.perplexity.ai/account/usage")!,
+                allowedCookieDomains: ["perplexity.ai", "www.perplexity.ai"],
+                readyHosts: ["perplexity.ai", "www.perplexity.ai"],
+                readyPathHints: ["account", "usage"]
+            )
+        case .kimi:
+            return QuotaWebSessionImportConfiguration(
+                providerID: .kimi,
+                windowTitle: "Kimi Session Import",
+                initialURL: URL(string: "https://www.kimi.com/code/console")!,
+                allowedCookieDomains: ["kimi.com", "www.kimi.com"],
+                readyHosts: ["kimi.com", "www.kimi.com"],
+                readyPathHints: ["console", "code"]
+            )
         default:
             return nil
         }
@@ -220,6 +274,10 @@ final class QuotaWebSessionImportRunner: NSObject {
 
         QuotaSecretStore.save(
             cookieHeader,
+            account: QuotaProviderRegistry.secretAccountName(for: configuration.providerID)
+        )
+        QuotaPreferences.setCredentialSourceLabel(
+            "Imported browser session",
             account: QuotaProviderRegistry.secretAccountName(for: configuration.providerID)
         )
         finish(.success(cookieCount: cookies.filter { configuration.matches(cookie: $0) }.count))

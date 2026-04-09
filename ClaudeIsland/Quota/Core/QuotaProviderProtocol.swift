@@ -10,6 +10,54 @@ protocol QuotaProvider: Sendable {
 
     func isConfigured() -> Bool
     func fetch() async throws -> QuotaSnapshot
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome
+}
+
+extension QuotaProvider {
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        QuotaProviderFetchOutcome(snapshot: try await fetch())
+    }
+}
+
+struct QuotaProviderFetchOutcome: Sendable {
+    let snapshot: QuotaSnapshot
+    let sourceLabel: String?
+    let debugProbe: QuotaDebugProbeSnapshot?
+
+    init(
+        snapshot: QuotaSnapshot,
+        sourceLabel: String? = nil,
+        debugProbe: QuotaDebugProbeSnapshot? = nil
+    ) {
+        self.snapshot = snapshot
+        self.sourceLabel = sourceLabel
+        self.debugProbe = debugProbe
+    }
+}
+
+protocol QuotaDebugDiagnosticCarrier: Error {
+    var quotaSourceLabelOverride: String? { get }
+    var quotaDebugProbeSnapshot: QuotaDebugProbeSnapshot? { get }
+}
+
+struct QuotaProviderFailure: LocalizedError, Sendable, QuotaDebugDiagnosticCarrier {
+    let message: String
+    let sourceLabel: String?
+    let debugProbe: QuotaDebugProbeSnapshot?
+
+    init(
+        message: String,
+        sourceLabel: String? = nil,
+        debugProbe: QuotaDebugProbeSnapshot? = nil
+    ) {
+        self.message = message
+        self.sourceLabel = sourceLabel
+        self.debugProbe = debugProbe
+    }
+
+    var errorDescription: String? { message }
+    var quotaSourceLabelOverride: String? { sourceLabel }
+    var quotaDebugProbeSnapshot: QuotaDebugProbeSnapshot? { debugProbe }
 }
 
 enum QuotaProviderError: LocalizedError, Sendable {

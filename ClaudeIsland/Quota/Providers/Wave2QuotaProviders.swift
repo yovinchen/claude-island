@@ -396,17 +396,33 @@ struct CopilotQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .copilot)
 
     func isConfigured() -> Bool {
-        authToken() != nil
+        authTokenInfo() != nil
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        guard let token = authToken(), !token.isEmpty else {
-            throw QuotaProviderError.missingCredentials("Copilot GitHub token not configured.")
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        guard let auth = authTokenInfo(), !auth.value.isEmpty else {
+            throw QuotaProviderFailure(
+                message: "Copilot GitHub token not configured.",
+                sourceLabel: "GitHub API",
+                debugProbe: QuotaDebugProbeSnapshot(
+                    providerID: .copilot,
+                    attemptedSource: "api token",
+                    resolvedSource: nil,
+                    provenanceLabel: nil,
+                    requestContext: "https://api.github.com/copilot_internal/user",
+                    lastValidation: nil,
+                    lastFailure: "Missing GitHub token."
+                )
+            )
         }
 
         var request = URLRequest(url: URL(string: "https://api.github.com/copilot_internal/user")!)
         request.httpMethod = "GET"
-        request.setValue("token \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("token \(auth.value)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("vscode/1.96.2", forHTTPHeaderField: "Editor-Version")
         request.setValue("copilot-chat/0.26.7", forHTTPHeaderField: "Editor-Plugin-Version")
@@ -418,7 +434,19 @@ struct CopilotQuotaProvider: QuotaProvider {
         case 200:
             break
         case 401, 403:
-            throw QuotaProviderError.unauthorized("Copilot GitHub token is invalid or missing required scope.")
+            throw QuotaProviderFailure(
+                message: "Copilot GitHub token is invalid or missing required scope.",
+                sourceLabel: auth.sourceLabel,
+                debugProbe: QuotaDebugProbeSnapshot(
+                    providerID: .copilot,
+                    attemptedSource: "api token",
+                    resolvedSource: "api token",
+                    provenanceLabel: auth.sourceLabel,
+                    requestContext: "https://api.github.com/copilot_internal/user",
+                    lastValidation: nil,
+                    lastFailure: "GitHub API rejected the token."
+                )
+            )
         default:
             throw QuotaProviderError.invalidResponse("Copilot API returned HTTP \(response.statusCode)")
         }
@@ -446,7 +474,7 @@ struct CopilotQuotaProvider: QuotaProvider {
             secondaryWindow = chatWindow
         }
 
-        return QuotaSnapshot(
+        let snapshot = QuotaSnapshot(
             providerID: .copilot,
             source: .apiKey,
             primaryWindow: primaryWindow,
@@ -462,10 +490,23 @@ struct CopilotQuotaProvider: QuotaProvider {
             updatedAt: Date(),
             note: nil
         )
+        return QuotaProviderFetchOutcome(
+            snapshot: snapshot,
+            sourceLabel: auth.sourceLabel,
+            debugProbe: QuotaDebugProbeSnapshot(
+                providerID: .copilot,
+                attemptedSource: "api token",
+                resolvedSource: "api token",
+                provenanceLabel: auth.sourceLabel,
+                requestContext: "vscode/1.96.2 + copilot-chat/0.26.7",
+                lastValidation: "Copilot internal user payload accepted.",
+                lastFailure: nil
+            )
+        )
     }
 
-    private func authToken() -> String? {
-        SavedProviderTokenResolver.token(for: QuotaProviderID.copilot, envKeys: ["GITHUB_TOKEN", "COPILOT_TOKEN"])
+    private func authTokenInfo() -> ResolvedProviderCredential? {
+        SavedProviderTokenResolver.tokenInfo(for: QuotaProviderID.copilot, envKeys: ["GITHUB_TOKEN", "COPILOT_TOKEN"])
     }
 
     private func makeWindow(
@@ -553,8 +594,11 @@ struct KimiQuotaProvider: QuotaProvider {
     let descriptor = QuotaProviderRegistry.descriptor(for: .kimi)
 
     func isConfigured() -> Bool {
-        if authToken() != nil {
+        if authTokenInfo() != nil {
             return true
+        }
+        guard QuotaPreferences.webCredentialMode(for: .kimi) != .off else {
+            return false
         }
         if QuotaCookieCache.load(providerID: .kimi) != nil {
             return true
@@ -567,15 +611,61 @@ struct KimiQuotaProvider: QuotaProvider {
     }
 
     func fetch() async throws -> QuotaSnapshot {
-        if let authToken = authToken() {
-            return try await fetchSnapshot(authToken: authToken, note: nil)
+        try await fetchOutcome().snapshot
+    }
+
+    func fetchOutcome() async throws -> QuotaProviderFetchOutcome {
+        if let auth = authTokenInfo() {
+            let snapshot = try await fetchSnapshot(authToken: auth.value, note: auth.sourceLabel)
+            return QuotaProviderFetchOutcome(
+                snapshot: snapshot,
+                sourceLabel: auth.sourceLabel,
+                debugProbe: QuotaDebugProbeSnapshot(
+                    providerID: .kimi,
+                    attemptedSource: "api token",
+                    resolvedSource: "api token",
+                    provenanceLabel: auth.sourceLabel,
+                    requestContext: "https://www.kimi.com/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages",
+                    lastValidation: "Kimi FEATURE_CODING usage accepted.",
+                    lastFailure: nil
+                )
+            )
+        }
+
+        guard QuotaPreferences.webCredentialMode(for: .kimi) != .off else {
+            throw QuotaProviderFailure(
+                message: "Kimi auth token not configured.",
+                sourceLabel: "Manual credential",
+                debugProbe: QuotaDebugProbeSnapshot(
+                    providerID: .kimi,
+                    attemptedSource: "api token",
+                    resolvedSource: nil,
+                    provenanceLabel: nil,
+                    requestContext: "https://www.kimi.com/code/console",
+                    lastValidation: nil,
+                    lastFailure: "Browser-backed Kimi credential mode is disabled."
+                )
+            )
         }
 
         if let cached = QuotaCookieCache.load(providerID: .kimi),
            let token = authToken(fromCookieHeader: cached.cookieHeader)
         {
             do {
-                return try await fetchSnapshot(authToken: token, note: "Browser cache: \(cached.sourceLabel)")
+                let snapshot = try await fetchSnapshot(authToken: token, note: "Browser cache: \(cached.sourceLabel)")
+                return QuotaProviderFetchOutcome(
+                    snapshot: snapshot,
+                    sourceLabel: "Browser cache",
+                    debugProbe: QuotaDebugProbeSnapshot(
+                        providerID: .kimi,
+                        attemptedSource: "cache",
+                        resolvedSource: "cache",
+                        provenanceLabel: "Browser cache: \(cached.sourceLabel)",
+                        requestContext: "https://www.kimi.com/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages",
+                        lastValidation: "Kimi browser cache token accepted.",
+                        lastFailure: nil
+                    )
+                )
             } catch let error as QuotaProviderError {
                 if case .unauthorized = error {
                     QuotaCookieCache.clear(providerID: .kimi)
@@ -591,7 +681,19 @@ struct KimiQuotaProvider: QuotaProvider {
             do {
                 let snapshot = try await fetchSnapshot(authToken: token, note: "Auto-imported from \(session.sourceLabel)")
                 QuotaCookieCache.store(providerID: .kimi, cookieHeader: session.cookieHeader, sourceLabel: session.sourceLabel)
-                return snapshot
+                return QuotaProviderFetchOutcome(
+                    snapshot: snapshot,
+                    sourceLabel: "Browser session",
+                    debugProbe: QuotaDebugProbeSnapshot(
+                        providerID: .kimi,
+                        attemptedSource: "browser",
+                        resolvedSource: "browser",
+                        provenanceLabel: "Auto-imported from \(session.sourceLabel)",
+                        requestContext: "https://www.kimi.com/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages",
+                        lastValidation: "Kimi browser session accepted.",
+                        lastFailure: nil
+                    )
+                )
             } catch let error as QuotaProviderError {
                 if case .unauthorized = error {
                     continue
@@ -601,7 +703,19 @@ struct KimiQuotaProvider: QuotaProvider {
         }
 #endif
 
-        throw QuotaProviderError.missingCredentials("Kimi auth token not configured.")
+        throw QuotaProviderFailure(
+            message: "Kimi auth token not configured.",
+            sourceLabel: "Manual credential",
+            debugProbe: QuotaDebugProbeSnapshot(
+                providerID: .kimi,
+                attemptedSource: "api token -> cache -> browser",
+                resolvedSource: nil,
+                provenanceLabel: nil,
+                requestContext: "https://www.kimi.com/code/console",
+                lastValidation: nil,
+                lastFailure: "No usable Kimi credential was found."
+            )
+        )
     }
 
     private func fetchSnapshot(authToken: String, note: String?) async throws -> QuotaSnapshot {
@@ -651,8 +765,8 @@ struct KimiQuotaProvider: QuotaProvider {
         )
     }
 
-    private func authToken() -> String? {
-        SavedProviderTokenResolver.token(for: QuotaProviderID.kimi, envKeys: ["KIMI_AUTH_TOKEN"])
+    private func authTokenInfo() -> ResolvedProviderCredential? {
+        SavedProviderTokenResolver.tokenInfo(for: QuotaProviderID.kimi, envKeys: ["KIMI_AUTH_TOKEN"])
     }
 
     private func authToken(fromCookieHeader cookieHeader: String) -> String? {

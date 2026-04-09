@@ -23,8 +23,11 @@ struct QuotaSettingsPane: View {
     @State private var selectedProviderID: QuotaProviderID = .codex
     @State private var secretValue = ""
     @State private var loadedSecretProviderID: QuotaProviderID?
+    @State private var providerAPISecretValue = ""
+    @State private var loadedAPISecretProviderID: QuotaProviderID?
     @State private var openCodeWorkspaceID = ""
     @State private var sourcePreference: QuotaSourcePreference = .auto
+    @State private var webCredentialMode: QuotaWebCredentialMode = .auto
     @State private var cliBinaryPath = ""
     @State private var importingSessionProviderID: QuotaProviderID?
     @State private var sessionImportFeedback: SessionImportFeedback?
@@ -72,10 +75,12 @@ struct QuotaSettingsPane: View {
             quotaStore.refreshIfNeeded(maxAge: 60)
             ensureSelection()
             loadSecretIfNeeded(force: true)
+            loadAPISecretIfNeeded(force: true)
             loadProviderPreferences()
         }
         .onChange(of: selectedProviderID) { _, _ in
             loadSecretIfNeeded(force: true)
+            loadAPISecretIfNeeded(force: true)
             loadProviderPreferences()
             sessionImportFeedback = nil
             copilotLoginFeedback = nil
@@ -87,6 +92,7 @@ struct QuotaSettingsPane: View {
         .onChange(of: quotaStore.orderedRecords.map(\.id)) { _, _ in
             ensureSelection()
             loadSecretIfNeeded(force: false)
+            loadAPISecretIfNeeded(force: false)
         }
     }
 
@@ -298,6 +304,18 @@ struct QuotaSettingsPane: View {
                 if let detail = record.detailText {
                     QuotaInfoRow(label: String(localized: "quota.info.detail"), value: detail)
                 }
+                if let provenance = record.diagnostics.debugProbe?.provenanceLabel, !provenance.isEmpty {
+                    QuotaInfoRow(label: String(localized: "quota.info.provenance"), value: provenance)
+                }
+                if let validation = record.diagnostics.debugProbe?.lastValidation, !validation.isEmpty {
+                    QuotaInfoRow(label: String(localized: "quota.info.validation"), value: validation)
+                }
+                if let requestContext = record.diagnostics.debugProbe?.requestContext, !requestContext.isEmpty {
+                    QuotaInfoRow(label: String(localized: "quota.info.request_context"), value: requestContext)
+                }
+                if let providerError = record.diagnostics.debugProbe?.lastFailure, !providerError.isEmpty {
+                    QuotaInfoRow(label: String(localized: "quota.info.provider_error"), value: providerError)
+                }
                 QuotaInfoRow(label: String(localized: "quota.info.version"), value: providerDetectionText(for: record))
                 QuotaInfoRow(label: String(localized: "quota.info.status"), value: providerServiceStatusText(for: record))
             }
@@ -347,6 +365,31 @@ struct QuotaSettingsPane: View {
                         )
                     ) {
                         ForEach(sourceOptions(for: record), id: \.id) { option in
+                            Text(option.displayName).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 260)
+                }
+            }
+
+            if record.descriptor.supportsWebCredentialMode {
+                providerSettingsBlock(
+                    title: String(localized: "quota.web_credential_mode"),
+                    caption: String(localized: "quota.web_credential_mode_hint")
+                ) {
+                    Picker(
+                        String(localized: "quota.web_credential_mode"),
+                        selection: Binding(
+                            get: { webCredentialMode },
+                            set: { newValue in
+                                webCredentialMode = newValue
+                                QuotaPreferences.setWebCredentialMode(newValue, for: record.id)
+                                quotaStore.userVisibleRefresh(providerID: record.id)
+                            }
+                        )
+                    ) {
+                        ForEach(QuotaWebCredentialMode.allCases, id: \.id) { option in
                             Text(option.displayName).tag(option)
                         }
                     }
@@ -508,6 +551,90 @@ struct QuotaSettingsPane: View {
                         .font(.system(size: 12))
                         .foregroundColor(copilotLoginFeedback.color)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if let apiAccount = apiTokenAccountName(for: record.id) {
+                providerSettingsBlock(
+                    title: String(localized: "quota.api_token"),
+                    caption: apiTokenHint(for: record.id)
+                ) {
+                    EmptyView()
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    SecureField(String(localized: "quota.api_token_placeholder"), text: $providerAPISecretValue)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.white.opacity(0.06))
+                        )
+                        .foregroundColor(.white.opacity(0.9))
+
+                    HStack(spacing: 10) {
+                        Button(String(localized: "quota.save_key")) {
+                            saveAPISecret(providerAPISecretValue, account: apiAccount, providerID: record.id)
+                            quotaStore.userVisibleRefresh(providerID: record.id)
+                        }
+                        .buttonStyle(SettingsButtonStyle())
+
+                        Button(String(localized: "quota.clear_key")) {
+                            providerAPISecretValue = ""
+                            saveAPISecret("", account: apiAccount, providerID: record.id)
+                            quotaStore.userVisibleRefresh(providerID: record.id)
+                        }
+                        .buttonStyle(SettingsButtonStyle(isDestructive: true))
+                    }
+                }
+            }
+
+            if record.id == .alibaba {
+                providerSettingsBlock(
+                    title: String(localized: "quota.alibaba_region"),
+                    caption: String(localized: "quota.alibaba_region_hint")
+                ) {
+                    Picker(
+                        String(localized: "quota.alibaba_region"),
+                        selection: Binding(
+                            get: { QuotaPreferences.alibabaRegion },
+                            set: { newValue in
+                                QuotaPreferences.alibabaRegion = newValue
+                                quotaStore.userVisibleRefresh(providerID: record.id)
+                            }
+                        )
+                    ) {
+                        ForEach(QuotaAlibabaRegion.allCases, id: \.rawValue) { region in
+                            Text(region.displayName).tag(region)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 320)
+                }
+            }
+
+            if record.id == .minimax {
+                providerSettingsBlock(
+                    title: String(localized: "quota.minimax_region"),
+                    caption: String(localized: "quota.minimax_region_hint")
+                ) {
+                    Picker(
+                        String(localized: "quota.minimax_region"),
+                        selection: Binding(
+                            get: { QuotaPreferences.minimaxRegion },
+                            set: { newValue in
+                                QuotaPreferences.minimaxRegion = newValue
+                                quotaStore.userVisibleRefresh(providerID: record.id)
+                            }
+                        )
+                    ) {
+                        ForEach(QuotaMiniMaxRegion.allCases, id: \.rawValue) { region in
+                            Text(region.displayName).tag(region)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 320)
                 }
             }
 
@@ -843,14 +970,71 @@ struct QuotaSettingsPane: View {
         loadedSecretProviderID = selectedRecord.id
     }
 
+    private func loadAPISecretIfNeeded(force: Bool) {
+        guard let account = apiTokenAccountName(for: selectedProviderID) else {
+            providerAPISecretValue = ""
+            loadedAPISecretProviderID = selectedProviderID
+            return
+        }
+
+        if !force, loadedAPISecretProviderID == selectedProviderID {
+            return
+        }
+
+        providerAPISecretValue = QuotaSecretStore.read(account: account) ?? ""
+        loadedAPISecretProviderID = selectedProviderID
+    }
+
     private func loadProviderPreferences() {
         sourcePreference = QuotaPreferences.sourcePreference(for: selectedProviderID)
+        webCredentialMode = QuotaPreferences.webCredentialMode(for: selectedProviderID)
         cliBinaryPath = QuotaPreferences.cliBinaryPath(for: selectedProviderID)
 
         if selectedProviderID == .opencode {
             openCodeWorkspaceID = QuotaPreferences.openCodeWorkspaceID
         } else {
             openCodeWorkspaceID = ""
+        }
+    }
+
+    private func apiTokenAccountName(for providerID: QuotaProviderID) -> String? {
+        switch providerID {
+        case .alibaba:
+            return QuotaProviderRegistry.secretAccountName(for: .alibaba, suffix: "api")
+        case .minimax:
+            return QuotaProviderRegistry.secretAccountName(for: .minimax, suffix: "api")
+        default:
+            return nil
+        }
+    }
+
+    private func apiTokenHint(for providerID: QuotaProviderID) -> String {
+        switch providerID {
+        case .alibaba:
+            return String(localized: "quota.alibaba_api_token_hint")
+        case .minimax:
+            return String(localized: "quota.minimax_api_token_hint")
+        default:
+            return String(localized: "quota.api_token_hint")
+        }
+    }
+
+    private func saveAPISecret(_ value: String, account: String, providerID: QuotaProviderID) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            QuotaSecretStore.delete(account: account)
+            QuotaPreferences.setCredentialSourceLabel(nil, account: account)
+        } else {
+            QuotaSecretStore.save(trimmed, account: account)
+            let label: String = switch providerID {
+            case .alibaba:
+                "Manual Alibaba API token"
+            case .minimax:
+                "Manual MiniMax API token"
+            default:
+                "Manual API token"
+            }
+            QuotaPreferences.setCredentialSourceLabel(label, account: account)
         }
     }
 
@@ -929,6 +1113,10 @@ struct QuotaSettingsPane: View {
                     await MainActor.run {
                         secretValue = token
                         quotaStore.saveSecret(token, for: .copilot)
+                        QuotaPreferences.setCredentialSourceLabel(
+                            "GitHub device flow",
+                            account: QuotaProviderRegistry.secretAccountName(for: .copilot)
+                        )
                         loadSecretIfNeeded(force: true)
                         quotaStore.userVisibleRefresh(providerID: .copilot)
                         copilotAuthorizationContext = nil
