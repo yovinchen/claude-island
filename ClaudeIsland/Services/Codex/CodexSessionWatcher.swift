@@ -118,6 +118,10 @@ class CodexSessionWatcher {
 
         for sessionId in newIds.sorted() {
             guard let entry = currentEntries[sessionId] else { continue }
+            if transcriptStates[sessionId] != nil {
+                processTranscriptDelta(for: entry)
+                continue
+            }
             bootstrapSession(entry, shouldEmitSessionStart: true)
         }
 
@@ -329,12 +333,30 @@ class CodexSessionWatcher {
         }
 
         guard type == "event_msg",
-              let payload = json["payload"] as? [String: Any],
-              let eventType = payload["type"] as? String else {
+              let payload = json["payload"] as? [String: Any] else {
             return nil
         }
+        return Self.desktopEventMessage(
+            from: payload,
+            sessionId: sessionId,
+            cwd: cwd,
+            tokenCountSummary: tokenCountSummary(from: payload),
+            itemCompletedSummary: itemCompletedSummary(from: payload),
+            rateLimits: anyCodableMap(payload["rate_limits"])
+        )
+    }
 
-        let resolvedCwd = cwd
+    static func desktopEventMessage(
+        from payload: [String: Any],
+        sessionId: String,
+        cwd: String,
+        tokenCountSummary: String? = nil,
+        itemCompletedSummary: String? = nil,
+        rateLimits: [String: AnyCodable]? = nil
+    ) -> HookEvent? {
+        guard let eventType = payload["type"] as? String else {
+            return nil
+        }
 
         switch eventType {
         case "user_message":
@@ -342,7 +364,7 @@ class CodexSessionWatcher {
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "UserPromptSubmit",
                 status: "processing",
                 pid: nil,
@@ -357,28 +379,14 @@ class CodexSessionWatcher {
             )
 
         case "task_started":
-            return HookEvent(
-                sessionId: sessionId,
-                source: .codexDesktop,
-                cwd: resolvedCwd,
-                event: "UserPromptSubmit",
-                status: "processing",
-                pid: nil,
-                tty: nil,
-                approvalChannel: .none,
-                tool: nil,
-                toolInput: nil,
-                toolUseId: nil,
-                notificationType: nil,
-                message: nil
-            )
+            return nil
 
         case "task_complete":
             let lastMessage = payload["last_agent_message"] as? String
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "Stop",
                 status: "waiting_for_input",
                 pid: nil,
@@ -397,7 +405,7 @@ class CodexSessionWatcher {
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "Notification",
                 status: "unknown",
                 pid: nil,
@@ -415,7 +423,7 @@ class CodexSessionWatcher {
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "Notification",
                 status: "unknown",
                 pid: nil,
@@ -425,15 +433,15 @@ class CodexSessionWatcher {
                 toolInput: nil,
                 toolUseId: nil,
                 notificationType: "token_count",
-                message: tokenCountSummary(from: payload),
-                rateLimits: anyCodableMap(payload["rate_limits"])
+                message: tokenCountSummary,
+                rateLimits: rateLimits
             )
 
         case "item_completed":
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "Notification",
                 status: "unknown",
                 pid: nil,
@@ -443,14 +451,14 @@ class CodexSessionWatcher {
                 toolInput: nil,
                 toolUseId: nil,
                 notificationType: "item_completed",
-                message: itemCompletedSummary(from: payload)
+                message: itemCompletedSummary
             )
 
         case "turn_aborted":
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "Notification",
                 status: "unknown",
                 pid: nil,
@@ -469,7 +477,7 @@ class CodexSessionWatcher {
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "Notification",
                 status: "unknown",
                 pid: nil,
@@ -486,7 +494,7 @@ class CodexSessionWatcher {
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "PreCompact",
                 status: "compacting",
                 pid: nil,
@@ -503,7 +511,7 @@ class CodexSessionWatcher {
             return HookEvent(
                 sessionId: sessionId,
                 source: .codexDesktop,
-                cwd: resolvedCwd,
+                cwd: cwd,
                 event: "PostCompact",
                 status: "waiting_for_input",
                 pid: nil,

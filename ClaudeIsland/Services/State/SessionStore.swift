@@ -117,6 +117,10 @@ actor SessionStore {
 
     private func processHookEvent(_ event: HookEvent) async {
         let sessionId = event.sessionId
+        if shouldIgnoreCodexEvent(event, existingSession: sessions[sessionId]) {
+            Self.logger.debug("Ignoring duplicate Codex event \(event.event, privacy: .public) from \(event.source.rawValue, privacy: .public) for session \(sessionId.prefix(8), privacy: .public)")
+            return
+        }
         let isNewSession = sessions.keys.contains(sessionId) == false
         var session = sessions[sessionId] ?? createSession(from: event)
         let resolvedApprovalChannel = event.resolvedApprovalChannel
@@ -155,7 +159,7 @@ actor SessionStore {
         if let tty = event.tty {
             session.tty = tty.replacingOccurrences(of: "/dev/", with: "")
         }
-        session.source = event.source
+        session.source = resolvedSessionSource(for: event, existingSource: session.source)
         session.approvalChannel = resolvedApprovalChannel
         if let eventEnv = event.env {
             session.env = eventEnv
@@ -270,7 +274,7 @@ actor SessionStore {
     private func createSession(from event: HookEvent) -> SessionState {
         SessionState(
             sessionId: event.sessionId,
-            source: event.source,
+            source: resolvedSessionSource(for: event, existingSource: nil),
             cwd: event.cwd,
             projectName: URL(fileURLWithPath: event.cwd).lastPathComponent,
             pid: event.pid,
@@ -279,6 +283,37 @@ actor SessionStore {
             approvalChannel: event.resolvedApprovalChannel,
             phase: .idle
         )
+    }
+
+    private func resolvedSessionSource(for event: HookEvent, existingSource: SessionSource?) -> SessionSource {
+        if existingSource == .codexDesktop, event.source == .codexCLI {
+            return .codexDesktop
+        }
+
+        if event.source == .codexCLI, isCodexDesktopSession(sessionId: event.sessionId) {
+            return existingSource ?? .codexDesktop
+        }
+
+        return event.source
+    }
+
+    private func shouldIgnoreCodexEvent(_ event: HookEvent, existingSession: SessionState?) -> Bool {
+        guard event.source == .codexCLI else { return false }
+
+        if existingSession?.source == .codexDesktop {
+            return true
+        }
+
+        return isCodexDesktopSession(sessionId: event.sessionId)
+    }
+
+    private func isCodexDesktopSession(sessionId: String) -> Bool {
+        guard let metadata = CodexSessionIndexStore.transcriptMetadata(for: sessionId) else {
+            return false
+        }
+
+        let originator = metadata.originator?.lowercased() ?? ""
+        return originator.contains("desktop")
     }
 
     private func projectConfigDiagnosticMessage(for source: SessionSource, cwd: String) -> String? {

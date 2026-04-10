@@ -80,6 +80,11 @@ struct HookInstaller {
     /// Sources that are detected but not yet supported (no Hooks API)
     static let unsupportedSources: Set<SessionSource> = [.trae]
 
+    /// Source types whose hook/config state is managed by Claude Island.
+    static var managedSourceTypes: [SessionSource] {
+        allSources.map(\.sourceType)
+    }
+
     /// Get bridge path for internal use (may contain spaces, not for hook commands)
     static func bridgePath() -> String {
         // Check for Swift bridge in app bundle (Contents/Helpers/)
@@ -156,6 +161,7 @@ struct HookInstaller {
             ("claude-island-amp-exec", "sh", "claude-island-amp-exec"),
             ("claude-island-amp-stream", "sh", "claude-island-amp-stream"),
             ("claude-island-antigravity-chat", "sh", "claude-island-antigravity-chat"),
+            ("claude-island-codex-hook-chain", "py", "claude-island-codex-hook-chain"),
             ("claude-island-copilot-json", "sh", "claude-island-copilot-json"),
             ("claude-island-kimi-print", "sh", "claude-island-kimi-print"),
             ("claude-island-kiro", "sh", "claude-island-kiro"),
@@ -193,6 +199,8 @@ struct HookInstaller {
                 }
                 try? source.install(bridgePath: bridge)
                 Task { await DiagnosticLogger.shared.log("Installed hook for \(source.displayName)", category: .hook) }
+            } else {
+                try? source.uninstall()
             }
         }
         // Only install Python script if Claude hook is enabled
@@ -854,7 +862,7 @@ struct CodexHookSource: HookSource {
     }
 
     var managedConfigPaths: [String] {
-        [configPath, codexConfigURL.path]
+        [configPath, codexConfigURL.path, hookChainURL.path]
     }
 
     private var codexConfigURL: URL {
@@ -877,6 +885,17 @@ struct CodexHookSource: HookSource {
             .appendingPathComponent(".codex/claude-island/notify-chain.json")
     }
 
+    private var hookChainURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/claude-island/hook-chain.json")
+    }
+
+    private var hookChainCommand: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude-island/bin/claude-island-codex-hook-chain")
+            .path
+    }
+
     func install(bridgePath: String) throws {
         let codexDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/claude-island")
@@ -887,7 +906,7 @@ struct CodexHookSource: HookSource {
         )
 
         try? FileManager.default.removeItem(at: legacyNotifyScriptURL)
-        updateCodexHooks(at: URL(fileURLWithPath: configPath), bridgePath: bridgePath)
+        updateCodexHooks(at: URL(fileURLWithPath: configPath))
         updateCodexConfig(at: codexConfigURL)
     }
 
@@ -898,6 +917,7 @@ struct CodexHookSource: HookSource {
            var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            var hooks = json["hooks"] as? [String: Any] {
             removeManagedHooks(from: &hooks)
+            restorePreservedCodexHooks(to: &hooks)
 
             if hooks.isEmpty {
                 json.removeValue(forKey: "hooks")
@@ -917,6 +937,7 @@ struct CodexHookSource: HookSource {
 
         try? FileManager.default.removeItem(at: legacyNotifyScriptURL)
         try? FileManager.default.removeItem(at: notifyChainURL)
+        try? FileManager.default.removeItem(at: hookChainURL)
     }
 
     func isInstalled() -> Bool {
@@ -929,6 +950,9 @@ struct CodexHookSource: HookSource {
         }
 
         guard containsManagedHook(in: hooks) else { return false }
+        guard FileManager.default.fileExists(atPath: hookChainURL.path) else {
+            return false
+        }
 
         let configContent = (try? String(contentsOf: codexConfigURL, encoding: .utf8)) ?? ""
         guard parseBool(inSection: "features", key: "codex_hooks", from: configContent) == true else {
@@ -941,7 +965,7 @@ struct CodexHookSource: HookSource {
 
         return isManagedNotifyCommand(notify)
     }
-    private func updateCodexHooks(at hooksURL: URL, bridgePath: String) {
+    private func updateCodexHooks(at hooksURL: URL) {
         var json: [String: Any] = [:]
         if let data = try? Data(contentsOf: hooksURL),
            let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -950,8 +974,10 @@ struct CodexHookSource: HookSource {
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
         removeManagedHooks(from: &hooks)
+        let preservedHooks = extractPreservedCodexHooks(from: &hooks)
+        writeCodexHookChain(preservedHooks)
 
-        let command = "\(bridgePath) --source codex"
+        let command = hookChainCommand
         let hookCommand: [String: Any] = ["type": "command", "command": command]
 
         for event in Self.events {
@@ -960,12 +986,7 @@ struct CodexHookSource: HookSource {
                 entry["matcher"] = matcher
             }
 
-            if var existingEntries = hooks[event.name] as? [[String: Any]] {
-                existingEntries.append(entry)
-                hooks[event.name] = existingEntries
-            } else {
-                hooks[event.name] = [entry]
-            }
+            hooks[event.name] = [entry]
         }
 
         json["version"] = json["version"] as? Int ?? 1
@@ -1021,6 +1042,54 @@ struct CodexHookSource: HookSource {
         }
     }
 
+    private func extractPreservedCodexHooks(from hooks: inout [String: Any]) -> [String: [[String: Any]]] {
+        var preserved: [String: [[String: Any]]] = [:]
+
+        for event in Self.events {
+            guard let entries = hooks[event.name] as? [[String: Any]], !entries.isEmpty else {
+                continue
+            }
+
+            preserved[event.name] = entries
+            hooks.removeValue(forKey: event.name)
+        }
+
+        return preserved
+    }
+
+    private func writeCodexHookChain(_ hooksByEvent: [String: [[String: Any]]]) {
+        let directory = hookChainURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let object: [String: Any] = hooksByEvent.reduce(into: [:]) { partialResult, entry in
+            partialResult[entry.key] = entry.value
+        }
+
+        if let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: hookChainURL)
+        }
+    }
+
+    private func restorePreservedCodexHooks(to hooks: inout [String: Any]) {
+        guard let data = try? Data(contentsOf: hookChainURL),
+              let stored = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+
+        for event in Self.events {
+            guard let preservedEntries = stored[event.name] as? [[String: Any]], !preservedEntries.isEmpty else {
+                continue
+            }
+
+            if var existingEntries = hooks[event.name] as? [[String: Any]] {
+                existingEntries.append(contentsOf: preservedEntries)
+                hooks[event.name] = existingEntries
+            } else {
+                hooks[event.name] = preservedEntries
+            }
+        }
+    }
+
     private func containsManagedHook(in hooks: [String: Any]) -> Bool {
         hooks.values.contains { value in
             guard let entries = value as? [[String: Any]] else { return false }
@@ -1041,15 +1110,46 @@ struct CodexHookSource: HookSource {
         }
     }
 
-    nonisolated private static func isManagedHookEntry(_ entry: [String: Any]) -> Bool {
+    nonisolated static func isManagedHookEntry(_ entry: [String: Any]) -> Bool {
         if let command = entry["command"] as? String {
-            return command.contains("claude-island") && command.contains("--source codex")
+            if command.contains("claude-island") && command.contains("--source codex") {
+                return true
+            }
+            if command.contains("claude-island-codex-hook-chain") {
+                return true
+            }
+            if command.contains("/.codex/claude-island/codex-island-hook.py") ||
+                command.hasSuffix("/codex-island-hook.py") {
+                return true
+            }
+        }
+
+        if let bash = entry["bash"] as? String {
+            if bash.contains("/.codex/claude-island/codex-island-hook.py") ||
+                bash.hasSuffix("/codex-island-hook.py") {
+                return true
+            }
         }
 
         if let hooks = entry["hooks"] as? [[String: Any]] {
             return hooks.contains {
-                (($0["command"] as? String)?.contains("claude-island") == true) &&
-                (($0["command"] as? String)?.contains("--source codex") == true)
+                if let command = $0["command"] as? String {
+                    if command.contains("claude-island") && command.contains("--source codex") {
+                        return true
+                    }
+                    if command.contains("claude-island-codex-hook-chain") {
+                        return true
+                    }
+                    if command.contains("/.codex/claude-island/codex-island-hook.py") ||
+                        command.hasSuffix("/codex-island-hook.py") {
+                        return true
+                    }
+                }
+                if let bash = $0["bash"] as? String {
+                    return bash.contains("/.codex/claude-island/codex-island-hook.py") ||
+                        bash.hasSuffix("/codex-island-hook.py")
+                }
+                return false
             }
         }
 

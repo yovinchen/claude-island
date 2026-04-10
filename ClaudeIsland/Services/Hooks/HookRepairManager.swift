@@ -53,18 +53,14 @@ class HookRepairManager: ObservableObject {
 
     /// Manually trigger repair of all hooks
     func repairAllNow() {
-        let managedSources: [SessionSource] = [
-            .claude, .cline, .codexCLI, .gemini, .cursor, .windsurf, .kimiCLI, .kiroCLI,
-            .ampCLI, .pi, .crush, .opencode, .copilot, .antigravity, .qoder, .qoderCLI, .droid, .codebuddy
-        ]
         var repaired: [String] = []
 
-        for source in managedSources {
+        for source in HookInstaller.managedSourceTypes {
             guard AppSettings.isHookEnabled(for: source) else { continue }
             guard let hookSource = HookInstaller.hookSource(for: source) else { continue }
 
             if !hookSource.isInstalled() {
-                let bridge = HookInstaller.bridgePath()
+                let bridge = HookInstaller.hookCommandPath()
                 try? hookSource.install(bridgePath: bridge)
                 repaired.append(hookSource.displayName)
                 logger.info("Repaired hook for \(hookSource.displayName, privacy: .public)")
@@ -95,12 +91,7 @@ class HookRepairManager: ObservableObject {
         isPaused = false
 
         // Find which source this config belongs to
-        let managedSources: [SessionSource] = [
-            .claude, .cline, .codexCLI, .gemini, .cursor, .windsurf, .kimiCLI, .kiroCLI,
-            .ampCLI, .pi, .crush, .opencode, .copilot, .antigravity, .qoder, .qoderCLI, .droid, .codebuddy
-        ]
-
-        for source in managedSources {
+        for source in HookInstaller.managedSourceTypes {
             guard AppSettings.isHookEnabled(for: source) else { continue }
             guard let hookSource = HookInstaller.hookSource(for: source) else { continue }
 
@@ -110,7 +101,7 @@ class HookRepairManager: ObservableObject {
                     // Backup before repair
                     backupConfig(at: path)
 
-                    let bridge = HookInstaller.bridgePath()
+                    let bridge = HookInstaller.hookCommandPath()
                     try? hookSource.install(bridgePath: bridge)
                     repairTimestamps.append(Date())
 

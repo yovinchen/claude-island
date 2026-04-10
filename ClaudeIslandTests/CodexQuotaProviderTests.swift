@@ -58,3 +58,93 @@ final class CodexQuotaProviderTests: XCTestCase {
         XCTAssertEqual(snapshot?.secondaryLimit?.usedRatio ?? 0, 0.40, accuracy: 0.001)
     }
 }
+
+final class CodexEventRegressionTests: XCTestCase {
+    func testCodexDesktopUserMessageMapsToUserPromptSubmit() {
+        let event = CodexSessionWatcher.desktopEventMessage(
+            from: [
+                "type": "user_message",
+                "message": "why twice?"
+            ],
+            sessionId: "session-user-message",
+            cwd: "/tmp"
+        )
+
+        XCTAssertEqual(event?.event, "UserPromptSubmit")
+        XCTAssertEqual(event?.prompt, "why twice?")
+        XCTAssertEqual(event?.source, .codexDesktop)
+    }
+
+    func testCodexDesktopTaskStartedDoesNotCreateDuplicatePromptEvent() {
+        let event = CodexSessionWatcher.desktopEventMessage(
+            from: [
+                "type": "task_started",
+                "turn_id": "turn-1"
+            ],
+            sessionId: "session-task-started",
+            cwd: "/tmp"
+        )
+
+        XCTAssertNil(event)
+    }
+
+    func testSessionStoreKeepsCodexDesktopAuthorityForDuplicateCLIEvent() async {
+        let sessionId = "codex-dedup-\(UUID().uuidString)"
+        let desktopEvent = HookEvent(
+            sessionId: sessionId,
+            source: .codexDesktop,
+            cwd: "/tmp",
+            event: "SessionStart",
+            status: "waiting_for_input",
+            pid: nil,
+            tty: nil,
+            approvalChannel: .none,
+            tool: nil,
+            toolInput: nil,
+            toolUseId: nil,
+            notificationType: nil,
+            message: nil
+        )
+        let cliEvent = HookEvent(
+            sessionId: sessionId,
+            source: .codexCLI,
+            cwd: "/tmp",
+            event: "SessionStart",
+            status: "waiting_for_input",
+            pid: nil,
+            tty: nil,
+            approvalChannel: .none,
+            tool: nil,
+            toolInput: nil,
+            toolUseId: nil,
+            notificationType: nil,
+            message: nil
+        )
+
+        await SessionStore.shared.process(.hookReceived(desktopEvent))
+        await SessionStore.shared.process(.hookReceived(cliEvent))
+
+        let session = await SessionStore.shared.session(for: sessionId)
+        XCTAssertEqual(session?.source, .codexDesktop)
+
+        await SessionStore.shared.process(.sessionEnded(sessionId: sessionId))
+    }
+
+    func testCodexLegacyPythonHookEntryIsRecognizedAsManaged() {
+        let legacyEntry: [String: Any] = [
+            "bash": "/Users/example/.codex/claude-island/codex-island-hook.py",
+            "type": "command"
+        ]
+        let modernEntry: [String: Any] = [
+            "hooks": [
+                [
+                    "command": "~/.claude-island/bin/claude-island-bridge-launcher.sh --source codex",
+                    "type": "command"
+                ]
+            ]
+        ]
+
+        XCTAssertTrue(CodexHookSource.isManagedHookEntry(legacyEntry))
+        XCTAssertTrue(CodexHookSource.isManagedHookEntry(modernEntry))
+    }
+}
